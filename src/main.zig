@@ -1,7 +1,9 @@
-// A configurable linter for Zig
+//! A configurable linter for Zig
 
 const clap = @import("clap");
 const std = @import("std");
+const git_revision = @import("gitrev").revision;
+const analysis = @import("./analysis.zig");
 
 const args = (
     \\--help                                Display this help and exit.
@@ -26,7 +28,13 @@ pub fn main() anyerror!void {
 
     // TODO: support getting params from a .ziglintrc file
 
-    if (res.args.help or res.positionals.len == 0) {
+    if (res.args.version) {
+        const stdout = std.io.getStdOut().writer();
+        try stdout.writeAll("ziglint from Git commit " ++
+            git_revision ++
+            "\nreport bugs and request features at https://github.com/AnnikaCodes/ziglint\n");
+        return;
+    } else if (res.args.help or res.positionals.len == 0) {
         const stdout = std.io.getStdOut().writer();
         try stdout.writeAll(
             \\ziglint: configurable static code analysis for the Zig language

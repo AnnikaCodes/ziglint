@@ -14,16 +14,17 @@ pub fn build(b: *std.build.Builder) !void {
     const git_revision = try b.exec(&[_][]const u8{
         "git", "rev-parse", "--short", "HEAD",
     });
-
+    const options = b.addOptions();
+    options.addOption([]const u8, "revision", git_revision);
     const exe = b.addExecutable("ziglint", "src/main.zig");
     exe.addPackage(std.build.Pkg {
         .name = "clap",
-        .path = std.build.FileSource { .path = "lib/clap/clap.zig" }
+        .source = std.build.FileSource { .path = "lib/clap/clap.zig" }
     });
+    exe.addOptions("gitrev", options);
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
-    exe.defineCMacro("GIT_REVISION", git_revision);
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
@@ -34,7 +35,7 @@ pub fn build(b: *std.build.Builder) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_tests = b.addTest("src/main.zig");
+    const exe_tests = b.addTest("src/analysis.zig");
     exe_tests.setTarget(target);
     exe_tests.setBuildMode(mode);
 
