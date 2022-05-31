@@ -1,0 +1,4 @@
+[submodule "clap"]
+	path = lib/clap
+	url = https://github.com/Hejsil/zig-clap/
+	branch = master
