@@ -10,7 +10,7 @@
 //!
 //! The AST-analyzing function should return a list of errors, without stopping when it encounters one.
 
-const AST = @import("std").zig.Ast;
+const std = @import("std");
 // A fault in the source code detected by the linter.
 const SourceCodeFault = struct {
     line_number: u32,
@@ -26,7 +26,8 @@ const SourceCodeFaultType = union(enum) {
 };
 
 pub const ASTAnalyzer = struct {
-    max_line_length: ?u32 = undefined,
+    // 0 for no checking
+    max_line_length: u32 = 0,
     enforce_const_pointers: bool = false,
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
@@ -34,34 +35,90 @@ pub const ASTAnalyzer = struct {
     }
 
     pub fn disable_max_line_length(self: *ASTAnalyzer) void {
-        self.max_line_length = undefined;
+        self.max_line_length = 0;
     }
 
     // Actually analyzes AST.
-    pub fn analyze(self: *const ASTAnalyzer, ast: AST) []const SourceCodeFault {
-        unreachable("TODO: implement AST analysis");
-        _ = self;
-        _ = ast;
+    //
+    // Caller must deinit the array.
+    // TODO: can just return a slice?
+    pub fn analyze(self: *const ASTAnalyzer, allocator: std.mem.Allocator, tree: std.zig.Ast) !std.ArrayList(SourceCodeFault) {
+        var faults = std.ArrayList(SourceCodeFault).init(allocator);
+
+        // Enforce line length as needed
+        if (self.max_line_length != 0) {
+            var current_line_number: u32 = 1;
+            var current_line_length: u32 = 0;
+            for (tree.source) |c, idx| {
+                current_line_length += 1;
+                if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
+                    // The line has ended
+                    if (current_line_length > self.max_line_length) {
+                        try faults.append(SourceCodeFault{
+                            .line_number = current_line_number,
+                            .column_number = self.max_line_length,
+                            .fault_type = SourceCodeFaultType{ .LineTooLong = current_line_length },
+                        });
+                    }
+                    current_line_number += 1;
+                    current_line_length = 0;
+                }
+            }
+        }
+        // TODO: look through AST nodes for other rule enforcements
+        return faults;
     }
 };
 
+// TODO: run tests in CI
 test "line-length limit" {
-    const std = @import("std");
-    var a = ASTAnalyzer{};
-    a.set_max_line_length(120);
-    const source: [:0]const u8 = "std.debug.print(skerjghrekgkrejhgkjerhgkjhrjkhgjksrhgjkrshjgkhsrjkghksjfhgkjhskjghkjfhjkgsfkjghdfkhgsjkfhgkjsdhgkjdhskgjhdskjghdksjghdskjghdhgksdhgjkshjkds);";
+    const TestCase = struct {
+        source: [:0]const u8,
+        expected_faults: [1]SourceCodeFault,
+    };
+    const cases = .{
+        TestCase{
+            .source = "std.debug.print(skerjghrekgkrejhgkjerhgkjhrjkhgjksrhgjkrshjgkhsrjkghksjfhgkjhskjghkjfhjkgsfkjghdfkhgsjkfhgkjsdhgkjdhskgjhdskjghdksjghdskjghdhgksdhgjkshjkds);",
+            .expected_faults = .{
+                SourceCodeFault{
+                    .line_number = 1,
+                    .column_number = 120,
+                    .fault_type = SourceCodeFaultType{ .LineTooLong = 157 },
+                },
+            },
+        },
+        TestCase{
+            .source = 
+            \\var x = 0;
+            \\// This is a comment
+            \\       var                        jjjjj                           =                                                   10;
+            ,
+            .expected_faults = .{
+                SourceCodeFault{
+                    .line_number = 3,
+                    .column_number = 120,
+                    .fault_type = SourceCodeFaultType{ .LineTooLong = 121 },
+                },
+            },
+        },
+    };
 
-    var tree = try std.zig.parse(std.testing.allocator, source);
-    defer tree.deinit(std.testing.allocator);
-    const faults = a.analyze(tree);
+    inline for (cases) |case| {
+        var a = ASTAnalyzer{};
+        a.set_max_line_length(120);
 
-    try std.testing.expectEqual(@intCast(usize, 1), faults.len);
-    const fault = faults[0];
-    try std.testing.expectEqual(@intCast(usize, 1), fault.line_number);
-    try std.testing.expect(fault.fault_type == .LineTooLong);
-    try std.testing.expectEqual(source.len, fault.fault_type.LineTooLong);
+        var tree = try std.zig.parse(std.testing.allocator, case.source);
+        defer tree.deinit(std.testing.allocator);
+        const faults = try a.analyze(std.testing.allocator, tree);
+        defer faults.deinit();
 
-    a.disable_max_line_length();
-    const faults_empty = a.analyze(tree);
-    try std.testing.expectEqual(@intCast(usize, 0), faults_empty.len);
+        try std.testing.expectEqual(@intCast(usize, 1), faults.items.len);
+        try std.testing.expectEqual(faults.items[0], case.expected_faults[0]);
+
+        a.disable_max_line_length();
+        const faults_empty = try a.analyze(std.testing.allocator, tree);
+        defer faults_empty.deinit();
+
+        try std.testing.expectEqual(@intCast(usize, 0), faults_empty.items.len);
+    }
 }
