@@ -17,10 +17,7 @@ pub fn build(b: *std.build.Builder) !void {
     const options = b.addOptions();
     options.addOption([]const u8, "revision", git_revision);
     const exe = b.addExecutable("ziglint", "src/main.zig");
-    exe.addPackage(std.build.Pkg {
-        .name = "clap",
-        .source = std.build.FileSource { .path = "lib/clap/clap.zig" }
-    });
+    exe.addPackage(std.build.Pkg{ .name = "clap", .source = std.build.FileSource{ .path = "lib/clap/clap.zig" } });
     exe.addOptions("gitrev", options);
     exe.setTarget(target);
     exe.setBuildMode(mode);
