@@ -71,54 +71,62 @@ pub const ASTAnalyzer = struct {
 };
 
 // TODO: run tests in CI
-test "line-length limit" {
+test {
+    _ = Tests;
+}
+
+const Tests = struct {
     const TestCase = struct {
         source: [:0]const u8,
         expected_faults: [1]SourceCodeFault,
     };
-    const cases = .{
-        TestCase{
-            .source = "std.debug.print(skerjghrekgkrejhgkjerhgkjhrjkhgjksrhgjkrshjgkhsrjkghksjfhgkjhskjghkjfhjkgsfkjghdfkhgsjkfhgkjsdhgkjdhskgjhdskjghdksjghdskjghdhgksdhgjkshjkds);",
-            .expected_faults = .{
-                SourceCodeFault{
-                    .line_number = 1,
-                    .column_number = 120,
-                    .fault_type = SourceCodeFaultType{ .LineTooLong = 157 },
-                },
-            },
-        },
-        TestCase{
-            .source = 
-            \\var x = 0;
-            \\// This is a comment
-            \\       var                        jjjjj                           =                                                   10;
-            ,
-            .expected_faults = .{
-                SourceCodeFault{
-                    .line_number = 3,
-                    .column_number = 120,
-                    .fault_type = SourceCodeFaultType{ .LineTooLong = 121 },
-                },
-            },
-        },
-    };
 
-    inline for (cases) |case| {
-        var a = ASTAnalyzer{};
-        a.set_max_line_length(120);
+    fn run_tests(analyzer: *const ASTAnalyzer, comptime cases: []const TestCase) !void {
+        inline for (cases) |case| {
+            var tree = try std.zig.parse(std.testing.allocator, case.source);
+            defer tree.deinit(std.testing.allocator);
 
-        var tree = try std.zig.parse(std.testing.allocator, case.source);
-        defer tree.deinit(std.testing.allocator);
-        const faults = try a.analyze(std.testing.allocator, tree);
-        defer faults.deinit();
+            const faults = try analyzer.analyze(std.testing.allocator, tree);
+            defer faults.deinit();
 
-        try std.testing.expectEqual(@intCast(usize, 1), faults.items.len);
-        try std.testing.expectEqual(faults.items[0], case.expected_faults[0]);
+            try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
 
-        a.disable_max_line_length();
-        const faults_empty = try a.analyze(std.testing.allocator, tree);
-        defer faults_empty.deinit();
-
-        try std.testing.expectEqual(@intCast(usize, 0), faults_empty.items.len);
+            for (faults.items) |fault, idx| {
+                try std.testing.expectEqual(case.expected_faults[idx].line_number, fault.line_number);
+                try std.testing.expectEqual(case.expected_faults[idx].column_number, fault.column_number);
+                try std.testing.expectEqual(case.expected_faults[idx].fault_type, fault.fault_type);
+            }
+        }
     }
-}
+
+    test "line-length lints" {
+        var analyzer = ASTAnalyzer{};
+        analyzer.set_max_line_length(120);
+        try run_tests(&analyzer, &.{
+            TestCase{
+                .source = "std.debug.print(skerjghrekgkrejhgkjerhgkjhrjkhgjksrhgjkrshjgkhsrjkghksjfhgkjhskjghkjfddadwhjkwjfkwjfkewjfkjwkfwkgsfkjfwjfhweewtjewtwehjtwwrewghdfkhgsjkjkds);",
+                .expected_faults = .{
+                    SourceCodeFault{
+                        .line_number = 1,
+                        .column_number = 120,
+                        .fault_type = SourceCodeFaultType{ .LineTooLong = 157 },
+                    },
+                },
+            },
+            TestCase{
+                .source = 
+                \\var x = 0;
+                \\// This is a comment
+                \\       var                        jjjjj                           =                                                   10;
+                ,
+                .expected_faults = .{
+                    SourceCodeFault{
+                        .line_number = 3,
+                        .column_number = 120,
+                        .fault_type = SourceCodeFaultType{ .LineTooLong = 121 },
+                    },
+                },
+            },
+        });
+    }
+};

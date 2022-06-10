@@ -1,0 +1,27 @@
+name: Zig CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: Install nightly Zig
+        uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: master
+      - name: Check code format
+        run: zig fmt --check .
+      - name: Run tests
+        run: zig build test
+      - name: Build executable
+        run: zig build
+      - name: Executable works!
+        run: zig-out/bin/ziglint --help
