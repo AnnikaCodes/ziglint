@@ -68,7 +68,9 @@ pub const ASTAnalyzer = struct {
 
         // TODO: look through AST nodes for other rule enforcements
         var i: usize = 0;
+        const tokens = tree.tokens.toMultiArrayList();
         const nodes = tree.nodes.toMultiArrayList();
+
         while (i < nodes.len) : (i += 1) {
             const node = nodes.get(i);
             // Is it a function prototype? If so, we will need to check const pointer enforcement
@@ -79,7 +81,31 @@ pub const ASTAnalyzer = struct {
             {
                 // const ptr enforcement!
                 switch (node.tag) {
-                    .fn_proto_simple => unreachable("TODO: implement fn_proto_simple walking"),
+                    .fn_proto_simple => {
+                        // fn(a: lhs) rhs
+                        const argument = nodes.get(node.data.lhs);
+                        switch (argument.tag) {
+                            .ptr_type_aligned => {
+                                // todo: do we have to worry about **?
+                                const asterisk_or_lbracket_token = argument.main_token;
+                                var token_idx = asterisk_or_lbracket_token;
+                                const is_const: bool = while (token_idx < tokens.len) : (token_idx += 1) {
+                                    const tag = tokens.get(token_idx).tag;
+                                    switch (tag) {
+                                        .keyword_const => break true, // TODO: is there a better way to tell if something is const?
+                                        .identifier => break false, // if we reach the identifier there hasn't been a const
+                                        else => {
+                                            std.debug.print("stepping over token {}\n", .{tag});
+                                        },
+                                    }
+                                } else {
+                                    unreachable("while loop did not terminate — malformed AST? bug?");
+                                };
+                                std.debug.print("is_const: {}\n", .{is_const});
+                            },
+                            else => unreachable("TODO: handle {} in const ptr enforcement", .{argument.tag}),
+                        }
+                    },
                     .fn_proto_multi => unreachable("TODO: implement fn_proto_multi walking"),
                     .fn_proto_one => unreachable("TODO: implement fn_proto_one walking"),
                     .fn_proto => {
@@ -117,11 +143,16 @@ const Tests = struct {
 
             try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
 
-            for (faults.items, 0..) |fault, idx| {
-                try std.testing.expectEqual(case.expected_faults[idx].line_number, fault.line_number);
-                try std.testing.expectEqual(case.expected_faults[idx].column_number, fault.column_number);
-                try std.testing.expectEqual(case.expected_faults[idx].fault_type, fault.fault_type);
+            if (case.expected_faults.len == 0) {
+                try std.testing.expectEqual(faults.items.len, 0);
+            } else {
+                for (faults.items, 0..) |fault, idx| {
+                    try std.testing.expectEqual(case.expected_faults[idx].line_number, fault.line_number);
+                    try std.testing.expectEqual(case.expected_faults[idx].column_number, fault.column_number);
+                    try std.testing.expectEqual(case.expected_faults[idx].fault_type, fault.fault_type);
+                }
             }
+
         }
     }
 
@@ -157,7 +188,7 @@ const Tests = struct {
     }
 
     test "const-pointer enforcement" {
-        if (@import("builtin").is_test) return error.SkipZigTest; // TODO: implementation
+        // if (@import("builtin").is_test) return error.SkipZigTest; // TODO: implementation
 
         var analyzer = ASTAnalyzer{};
         analyzer.enforce_const_pointers = true;
@@ -165,13 +196,13 @@ const Tests = struct {
         try run_tests(&analyzer, &.{
             TestCase{
                 // Pointer is OK: const & unused
-                .source = "fn foo(ptr: *const u8) void {}",
+                .source = "fn foo1(ptr: *const u8) void {}",
                 .expected_faults = &.{},
             },
 
             TestCase{
                 // Pointer is not OK: mutable and unused
-                .source = "fn foo(ptr: *u8) void {}",
+                .source = "fn foo2(ptr: *u8) void {}",
                 .expected_faults = &.{
                     SourceCodeFault{
                         .line_number = 1,
@@ -183,20 +214,20 @@ const Tests = struct {
 
             TestCase{
                 // Pointer is OK: const & used immutably
-                .source = "fn foo(ptr: *const u8) u8 { return *ptr + 1; }",
+                .source = "fn foo3(ptr: *const u8) u8 { return *ptr + 1; }",
                 .expected_faults = &.{},
             },
 
             TestCase{
                 // Pointer is OK: mutable and used mutably
-                .source = "fn foo(ptr: *mut u8) void { *ptr = 1; }",
+                .source = "fn foo4(ptr: *mut u8) void { *ptr = 1; }",
                 .expected_faults = &.{},
             },
 
             TestCase{
                 // Pointer is OK: mutable and POSSIBLY used mutably
                 .source =
-                \\fn foo(ptr: *mut u8) void {
+                \\fn foo5(ptr: *mut u8) void {
                 \\   if (*ptr == 0) {
                 \\        *ptr = 1;
                 \\    }
