@@ -2,3 +2,6 @@
 	path = lib/clap
 	url = https://github.com/Hejsil/zig-clap/
 	branch = master
+[submodule "src/lib/clap"]
+	path = src/lib/clap
+	url = https://github.com/Hejsil/zig-clap.git

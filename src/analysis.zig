@@ -49,7 +49,7 @@ pub const ASTAnalyzer = struct {
         if (self.max_line_length != 0) {
             var current_line_number: u32 = 1;
             var current_line_length: u32 = 0;
-            for (tree.source) |c, idx| {
+            for (tree.source, 0..) |c, idx| {
                 current_line_length += 1;
                 if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
                     // The line has ended
@@ -109,7 +109,7 @@ const Tests = struct {
 
     fn run_tests(analyzer: *const ASTAnalyzer, comptime cases: []const TestCase) !void {
         inline for (cases) |case| {
-            var tree = try std.zig.parse(std.testing.allocator, case.source);
+            var tree = try std.zig.Ast.parse(std.testing.allocator, case.source, .zig);
             defer tree.deinit(std.testing.allocator);
 
             const faults = try analyzer.analyze(std.testing.allocator, tree);
@@ -117,7 +117,7 @@ const Tests = struct {
 
             try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
 
-            for (faults.items) |fault, idx| {
+            for (faults.items, 0..) |fault, idx| {
                 try std.testing.expectEqual(case.expected_faults[idx].line_number, fault.line_number);
                 try std.testing.expectEqual(case.expected_faults[idx].column_number, fault.column_number);
                 try std.testing.expectEqual(case.expected_faults[idx].fault_type, fault.fault_type);
