@@ -69,56 +69,25 @@ pub const ASTAnalyzer = struct {
         // TODO: look through AST nodes for other rule enforcements
         var i: u32 = 0;
         const tokens = tree.tokens.toMultiArrayList();
+        _ = tokens;
         const nodes = tree.nodes.toMultiArrayList();
 
         while (i < nodes.len) : (i += 1) {
             const node = nodes.get(i);
+            _ = node;
             // Is it a function prototype? If so, we will need to check const pointer enforcement
             var buffer: [1]u32 = [1]u32{0};
             const fullProto = tree.fullFnProto(&buffer, i);
+            // TODO: can we know the length ahead of time?
+            var mutable_ptrs = std.ArrayList(std.zig.Ast.Node.Index).init(allocator);
             if (self.enforce_const_pointers and fullProto != null) {
-                std.debug.print("full proto: {?} (buffer={any})\n", .{ fullProto, buffer });
-                // const ptr enforcement!
-                switch (node.tag) {
-                    .fn_proto_simple => {
-                        // fn(a: lhs) rhs
-                        const argument = nodes.get(node.data.lhs);
-                        var mutable_ptr: ?[]const u8 = undefined;
-                        switch (argument.tag) {
-                            .ptr_type_aligned => {
-                                // todo: do we have to worry about **?
-                                const asterisk_or_lbracket_token = argument.main_token;
-                                var token_idx = asterisk_or_lbracket_token;
-                                var is_const = false;
-                                while (token_idx < tokens.len) : (token_idx += 1) {
-                                    const tag = tokens.get(token_idx).tag;
-                                    switch (tag) {
-                                        .keyword_const => {
-                                            // const ptr!
-                                            is_const = true;
-                                        },
-                                        .identifier => {
-                                            if (!is_const) {
-                                                const token_end = if (token_idx < tokens.len) tokens.get(token_idx + 1).start else tree.source.len;
-                                                mutable_ptr = tree.source[tokens.get(token_idx).start..token_end];
-                                            }
-                                        },
-                                        else => std.debug.print("stepping over token {}\n", .{tag}),
-                                    }
-                                }
-                            },
-                            else => unreachable("TODO: handle {} in const ptr enforcement", .{argument.tag}),
-                        }
-                    },
-                    .fn_proto_multi => unreachable("TODO: implement fn_proto_multi walking"),
-                    .fn_proto_one => unreachable("TODO: implement fn_proto_one walking"),
-                    .fn_proto => {
-                        unreachable("TODO: implement fn_proto walking");
-                    },
-                    else => unreachable(
-                        \\Something has gone severely wrong within ziglint (tag in if but not in switch).
-                        \\Please file a bug at https://github.com/AnnikaCodes/ziglint
-                    ),
+                for (fullProto.?.ast.params) |param_node_idx| {
+                    const fullPtrType = tree.fullPtrType(param_node_idx);
+                    if (fullPtrType == null) continue; // not a pointer
+                    if (fullPtrType.?.const_token == null) { // pointer is mutable
+                        std.debug.print("FOUND A MUTABLE POINTER: {any}\n", .{nodes.get(param_node_idx)});
+                        try mutable_ptrs.append(param_node_idx);
+                    }
                 }
             }
         }
@@ -240,3 +209,7 @@ const Tests = struct {
         });
     }
 };
+
+fn get_token_text(token: std.zig.Ast.TokenIndex, tree: std.zig.Ast) []const u8 {
+    return tree.source[tree.tokens.get(token).start..tree.tokens.get(token + 1).start];
+}
