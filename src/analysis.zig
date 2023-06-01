@@ -67,41 +67,45 @@ pub const ASTAnalyzer = struct {
         }
 
         // TODO: look through AST nodes for other rule enforcements
-        var i: usize = 0;
+        var i: u32 = 0;
         const tokens = tree.tokens.toMultiArrayList();
         const nodes = tree.nodes.toMultiArrayList();
 
         while (i < nodes.len) : (i += 1) {
             const node = nodes.get(i);
             // Is it a function prototype? If so, we will need to check const pointer enforcement
-            if (self.enforce_const_pointers and (node.tag == .fn_proto_simple or
-                node.tag == .fn_proto_multi or
-                node.tag == .fn_proto_one or
-                node.tag == .fn_proto))
-            {
+            var buffer: [1]u32 = [1]u32{0};
+            const fullProto = tree.fullFnProto(&buffer, i);
+            if (self.enforce_const_pointers and fullProto != null) {
+                std.debug.print("full proto: {?} (buffer={any})\n", .{ fullProto, buffer });
                 // const ptr enforcement!
                 switch (node.tag) {
                     .fn_proto_simple => {
                         // fn(a: lhs) rhs
                         const argument = nodes.get(node.data.lhs);
+                        var mutable_ptr: ?[]const u8 = undefined;
                         switch (argument.tag) {
                             .ptr_type_aligned => {
                                 // todo: do we have to worry about **?
                                 const asterisk_or_lbracket_token = argument.main_token;
                                 var token_idx = asterisk_or_lbracket_token;
-                                const is_const: bool = while (token_idx < tokens.len) : (token_idx += 1) {
+                                var is_const = false;
+                                while (token_idx < tokens.len) : (token_idx += 1) {
                                     const tag = tokens.get(token_idx).tag;
                                     switch (tag) {
-                                        .keyword_const => break true, // TODO: is there a better way to tell if something is const?
-                                        .identifier => break false, // if we reach the identifier there hasn't been a const
-                                        else => {
-                                            std.debug.print("stepping over token {}\n", .{tag});
+                                        .keyword_const => {
+                                            // const ptr!
+                                            is_const = true;
                                         },
+                                        .identifier => {
+                                            if (!is_const) {
+                                                const token_end = if (token_idx < tokens.len) tokens.get(token_idx + 1).start else tree.source.len;
+                                                mutable_ptr = tree.source[tokens.get(token_idx).start..token_end];
+                                            }
+                                        },
+                                        else => std.debug.print("stepping over token {}\n", .{tag}),
                                     }
-                                } else {
-                                    unreachable("while loop did not terminate — malformed AST? bug?");
-                                };
-                                std.debug.print("is_const: {}\n", .{is_const});
+                                }
                             },
                             else => unreachable("TODO: handle {} in const ptr enforcement", .{argument.tag}),
                         }
@@ -152,7 +156,6 @@ const Tests = struct {
                     try std.testing.expectEqual(case.expected_faults[idx].fault_type, fault.fault_type);
                 }
             }
-
         }
     }
 
