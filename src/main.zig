@@ -2,7 +2,7 @@
 
 const clap = @import("./lib/clap/clap.zig");
 const std = @import("std");
-const git_revision = @import("gitrev").revision;
+// const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 
 const args = (
@@ -31,7 +31,7 @@ pub fn main() anyerror!void {
     if (res.args.version != 0) {
         const stdout = std.io.getStdOut().writer();
         try stdout.writeAll("ziglint from Git commit " ++
-            git_revision ++
+            "<TODO: add revision here>" ++
             "\nreport bugs and request features at https://github.com/AnnikaCodes/ziglint\n");
         return;
     } else if (res.args.help != 0 or res.positionals.len == 0) {
