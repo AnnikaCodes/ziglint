@@ -69,39 +69,16 @@ pub const ASTAnalyzer = struct {
 
         // TODO: look through AST nodes for other rule enforcements
         var i: u32 = 0;
-        const tokens = tree.tokens.toMultiArrayList();
-        const nodes = tree.nodes.toMultiArrayList();
-
-        std.debug.print("\n\n", .{});
-        var q: u32 = 0;
-        while (q < tokens.len) : (q += 1) {
-            std.debug.print("\ntokens[{}] = {s}", .{ q, tree.tokenSlice(q) });
-        }
-        q = 0;
-        while (q < nodes.len) : (q += 1) {
-            std.debug.print("\nnodes[{}] = {}", .{ q, nodes.get(q) });
-        }
-        q = 0;
-        while (q < tree.extra_data.len) : (q += 1) {
-            std.debug.print("\nextra_data[{}] = {}", .{ q, tree.extra_data[q] });
-        }
 
         var const_ptr_enforced_fn_token_indices = std.ArrayList(u32).init(allocator);
         defer const_ptr_enforced_fn_token_indices.deinit();
-        while (i < nodes.len) : (i += 1) {
-            const node = nodes.get(i);
-            _ = node;
+        while (i < tree.nodes.len) : (i += 1) {
             // Is it a function prototype? If so, we will need to check const pointer enforcement
             var buffer: [1]u32 = [1]u32{0};
             const fullProto = tree.fullFnProto(&buffer, i);
             // TODO: can we know the length ahead of time?
             var mutable_ptr_token_indices = std.ArrayList(u32).init(allocator);
             defer mutable_ptr_token_indices.deinit();
-            var buf2: [2]u32 = [2]u32{ 0, 0 };
-            const fullContainer = tree.fullContainerField(i);
-            _ = buf2;
-
-            std.debug.print("\nfullContainer = {any}\nmembers = {}", .{ fullContainer, 0 });
 
             if (self.enforce_const_pointers and fullProto != null) {
                 const name_token_idx = fullProto.?.name_token.?;
@@ -115,30 +92,30 @@ pub const ASTAnalyzer = struct {
                     const fullPtrType = tree.fullPtrType(param_node_idx);
                     if (fullPtrType == null) continue; // not a pointer
                     if (fullPtrType.?.const_token == null) { // pointer is mutable
-                        std.debug.print("FOUND A MUTABLE POINTER: {any}, {s}\n", .{ fullPtrType, get_identifier(param_node_idx - 1, &tree) });
                         // subtract 2 since main_token is the asterisk - we skip the '*' and the ':'
-                        try mutable_ptr_token_indices.append(fullPtrType.?.ast.main_token - 2);
+                        const token = fullPtrType.?.ast.main_token - 2;
+                        std.debug.print("FOUND A MUTABLE POINTER: `{s}`\n", .{tree.tokenSlice(token)});
+                        try mutable_ptr_token_indices.append(token);
                     }
                 }
                 if (mutable_ptr_token_indices.items.len > 0) {
                     // walk through function body and remove used mutable ptrs
                     // to do this, we find the block decl
                     var j = i;
-                    std.debug.print("\nBEFORE: mutable_ptr_token_indices = {any}\n", .{mutable_ptr_token_indices.items});
 
-                    while (j < nodes.len) : (j += 1) {
-                        const block = nodes.get(j);
+                    while (j < tree.nodes.len) : (j += 1) {
+                        const block = tree.nodes.get(j);
                         if (block.tag == .block_two or block.tag == .block_two_semicolon) {
                             const start = block.data.lhs;
                             const end = block.data.rhs;
                             if (start == 0) {
-                                check_ptr_usage(&mutable_ptr_token_indices, nodes.get(end), &tree);
+                                check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(end), &tree);
                             } else if (end == 0) {
-                                check_ptr_usage(&mutable_ptr_token_indices, nodes.get(start), &tree);
+                                check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(start), &tree);
                             } else {
                                 var k = start;
                                 while (k < end) : (k += 1) {
-                                    check_ptr_usage(&mutable_ptr_token_indices, nodes.get(k), &tree);
+                                    check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(k), &tree);
                                 }
                             }
                             break;
@@ -147,12 +124,12 @@ pub const ASTAnalyzer = struct {
                             break;
                         }
                     }
-                    std.debug.print("\nmutable_ptr_token_indices = {any}\n", .{mutable_ptr_token_indices.items});
+
                     for (mutable_ptr_token_indices.items) |tok| {
                         const location = tree.tokenLocation(0, tok);
                         try faults.append(SourceCodeFault{
-                            .line_number = location.line + 1, // TODO
-                            .column_number = location.column, // TODO
+                            .line_number = location.line + 1, // is +1 really right here?
+                            .column_number = location.column,
                             .fault_type = SourceCodeFaultType{ .PointerParamNotConst = tree.tokenSlice(tok) },
                         });
                     }
@@ -181,7 +158,6 @@ fn check_ptr_usage(
             for (mutable_ptr_token_indices.items, 0..) |ptr_ident, i| {
                 // TODO: can optimize by tokenSlice()ing once and passing around?
                 if (node_has_identifier(node.data.lhs, tree.tokenSlice(ptr_ident), tree)) {
-                    std.debug.print("Removing mutable pointer from list: {s}\n", .{tree.tokenSlice(ptr_ident)});
                     _ = mutable_ptr_token_indices.swapRemove(i);
                 }
             }
@@ -198,7 +174,6 @@ fn node_has_identifier(node_idx: std.zig.Ast.Node.Index, ident: []const u8, tree
 // TODO: more efficient to pass nodeindex?
 fn get_identifier(node_idx: std.zig.Ast.Node.Index, tree: *const std.zig.Ast) []const u8 {
     const node = tree.nodes.get(node_idx);
-    std.debug.print("get_identifier: node = {any}, tree.tokenSlice(mainTok)={s}\n", .{ node, tree.tokenSlice(node.main_token) });
     switch (node.tag) {
         .identifier => return tree.tokenSlice(node.main_token),
         else => {
@@ -227,8 +202,6 @@ const Tests = struct {
             const faults = try analyzer.analyze(std.testing.allocator, tree);
             defer faults.deinit();
 
-            std.debug.print("faults: {any}\n", .{faults.items});
-            std.debug.print("fault1: {any}\n", .{faults.items[0].fault_type});
             try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
 
             if (case.expected_faults.len == 0) {
