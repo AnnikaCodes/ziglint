@@ -28,8 +28,15 @@ const SourceCodeFaultType = union(enum) {
 
 pub const ASTAnalyzer = struct {
     // 0 for no checking
-    max_line_length: u32 = 0,
-    enforce_const_pointers: bool = false,
+    max_line_length: u32,
+    enforce_const_pointers: bool,
+
+    pub fn new(max_line_length: u32, enforce_const_pointers: bool) ASTAnalyzer {
+        return ASTAnalyzer{
+            .max_line_length = max_line_length,
+            .enforce_const_pointers = enforce_const_pointers,
+        };
+    }
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
         self.max_line_length = max_line_length;
