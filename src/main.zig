@@ -5,6 +5,12 @@ const std = @import("std");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 
+const BOLD: []const u8 = "\x1b[1m";
+const RED: []const u8 = "\x1b[31m";
+const BOLD_MAGENTA: []const u8 = "\x1b[1;35m";
+const GREEN: []const u8 = "\x1b[32m";
+const RESET: []const u8 = "\x1b[0m";
+
 const args = (
     \\--help                                Display this help and exit.
     \\--version                             Output version information and exit.
@@ -94,6 +100,10 @@ fn lint_file(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis
     switch (kind) {
         .file => {
             // lint it
+            if (!std.mem.endsWith(u8, file_name, ".zig")) {
+                // not a Zig file
+                return;
+            }
             const contents = try alloc.allocSentinel(u8, metadata.size() + 1, 0);
             defer alloc.free(contents);
             _ = try file.readAll(contents);
@@ -103,9 +113,37 @@ fn lint_file(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis
             const faults = try analyzer.analyze(alloc, ast);
             defer faults.deinit();
 
+            const stdout = std.io.getStdOut().writer();
             for (faults.items) |fault| {
-                std.debug.print("FAULT: {any}\n", .{fault});
+                try stdout.print("{s}{s}:{}:{}{s}: ", .{
+                    BOLD,
+                    file_name,
+                    fault.line_number,
+                    fault.column_number,
+                    RESET,
+                });
+                switch (fault.fault_type) {
+                    .LineTooLong => |len| try stdout.print(
+                        "line is {s}{} characters long{s}; the maximum is {}",
+                        .{ RED, len, RESET, analyzer.max_line_length },
+                    ),
+                    .PointerParamNotConst => |name| try stdout.print(
+                        "pointer parameter {s}{s}{s}{s} is not const{s}, but I think it can be",
+                        .{
+                            BOLD_MAGENTA,
+                            name,
+                            RESET,
+                            RED,
+                            RESET,
+                        },
+                    ),
+                }
+                try stdout.writeAll("\n");
             }
+
+            // if (faults.items.len == 0) {
+            //     try stdout.print("{s}{s}{s}: {s}no faults found!{s}\n", .{ BOLD, file_name, RESET, GREEN, RESET });
+            // }
         },
         .directory => {
             // iterate over it

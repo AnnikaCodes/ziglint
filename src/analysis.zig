@@ -12,7 +12,7 @@
 
 const std = @import("std");
 // A fault in the source code detected by the linter.
-const SourceCodeFault = struct {
+pub const SourceCodeFault = struct {
     line_number: usize,
     column_number: usize,
     fault_type: SourceCodeFaultType,
