@@ -11,6 +11,12 @@ const BOLD_MAGENTA: []const u8 = "\x1b[1;35m";
 const GREEN: []const u8 = "\x1b[32m";
 const RESET: []const u8 = "\x1b[0m";
 
+// for sorting
+// TODO figure out the idiomatic way to sort in zig
+fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCodeFault) bool {
+    return a.line_number < b.line_number;
+}
+
 const args = (
     \\--help                                Display this help and exit.
     \\--version                             Output version information and exit.
@@ -113,6 +119,10 @@ fn lint_file(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis
             const faults = try analyzer.analyze(alloc, ast);
             defer faults.deinit();
 
+            // TODO just return faults.items
+
+            const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.items, .{}, less_than);
+            _ = sorted_faults;
             const stdout = std.io.getStdOut().writer();
             for (faults.items) |fault| {
                 try stdout.print("{s}{s}:{}:{}{s}: ", .{
