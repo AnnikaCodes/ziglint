@@ -70,6 +70,11 @@ pub const ASTAnalyzer = struct {
         // TODO: look through AST nodes for other rule enforcements
         var i: u32 = 0;
 
+        // while (i < tree.nodes.len) : (i += 1) {
+        //     std.debug.print("nodes[{}]: {}\n", .{i, tree.nodes.get(i)});
+        // }
+        // i = 0;
+
         var const_ptr_enforced_fn_token_indices = std.ArrayList(u32).init(allocator);
         defer const_ptr_enforced_fn_token_indices.deinit();
         while (i < tree.nodes.len) : (i += 1) {
@@ -162,6 +167,9 @@ fn check_ptr_usage(
                 }
             }
         },
+        // does not mutate
+        .identifier => {},
+        // TODO: implement more of these
         else => std.debug.print("Don't know if {} mutates a pointer\n", .{node.tag}),
     }
 }
@@ -176,6 +184,8 @@ fn get_identifier(node_idx: std.zig.Ast.Node.Index, tree: *const std.zig.Ast) []
     const node = tree.nodes.get(node_idx);
     switch (node.tag) {
         .identifier => return tree.tokenSlice(node.main_token),
+        // rhs is the pointer
+        .ptr_type_aligned => return get_identifier(node.data.rhs, tree),
         else => {
             std.debug.print("Don't know how to get identifier from node: {any}\n", .{node.tag});
             return "";
@@ -254,11 +264,11 @@ const Tests = struct {
         analyzer.enforce_const_pointers = true;
 
         try run_tests(&analyzer, &.{
-            // TestCase{
-            //     // Pointer is OK: const & unused
-            //     .source = "fn foo1(ptr: *const u8) void {}",
-            //     .expected_faults = &.{},
-            // },
+            TestCase{
+                // Pointer is OK: const & unused
+                .source = "fn foo1(ptr: *const u8) void {}",
+                .expected_faults = &.{},
+            },
 
             TestCase{
                 // Pointer is not OK: mutable and unused
@@ -272,34 +282,34 @@ const Tests = struct {
                 },
             },
 
-            // TestCase{
-            //     // Pointer is OK: const & used immutably
-            //     .source = "fn foo3(ptr: *const u8) u8 { return *ptr + 1; }",
-            //     .expected_faults = &.{},
-            // },
+            TestCase{
+                // Pointer is OK: const & used immutably
+                .source = "fn foo3(ptr: *const u8) u8 { return *ptr + 1; }",
+                .expected_faults = &.{},
+            },
 
-            // TestCase{
-            //     // Pointer is OK: mutable and used mutably
-            //     .source = "fn foo4(ptr: *u8) void { *ptr = 1; std.debug.print('lol'); secret_third_thing(); }",
-            //     .expected_faults = &.{},
-            // },
+            TestCase{
+                // Pointer is OK: mutable and used mutably
+                .source = "fn foo4(ptr: *u8) void { *ptr = 1; std.debug.print('lol'); secret_third_thing(); }",
+                .expected_faults = &.{},
+            },
 
-            // TestCase{
-            //     // Pointer is OK: mutable and used mutably
-            //     .source = "fn foo6(ptr: *u8) void { *ptr = 1; }",
-            //     .expected_faults = &.{},
-            // },
+            TestCase{
+                // Pointer is OK: mutable and used mutably
+                .source = "fn foo6(ptr: *u8) void { *ptr = 1; }",
+                .expected_faults = &.{},
+            },
 
-            // TestCase{
-            //     // Pointer is OK: mutable and POSSIBLY used mutably
-            //     .source =
-            //     \\fn foo5(ptr: *u8) void {
-            //     \\   if (*ptr == 0) {
-            //     \\        *ptr = 1;
-            //     \\    }
-            //     ,
-            //     .expected_faults = &.{},
-            // },
+            TestCase{
+                // Pointer is OK: mutable and POSSIBLY used mutably
+                .source =
+                \\fn foo5(ptr: *u8) void {
+                \\   if (*ptr == 0) {
+                \\        *ptr = 1;
+                \\    }
+                ,
+                .expected_faults = &.{},
+            },
         });
     }
 };
