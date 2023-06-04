@@ -31,13 +31,6 @@ pub const ASTAnalyzer = struct {
     max_line_length: u32,
     enforce_const_pointers: bool,
 
-    pub fn new(max_line_length: u32, enforce_const_pointers: bool) ASTAnalyzer {
-        return ASTAnalyzer{
-            .max_line_length = max_line_length,
-            .enforce_const_pointers = enforce_const_pointers,
-        };
-    }
-
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
         self.max_line_length = max_line_length;
     }
@@ -54,6 +47,7 @@ pub const ASTAnalyzer = struct {
         var faults = std.ArrayList(SourceCodeFault).init(allocator);
 
         // Enforce line length as needed
+        // TODO: look for and store ziglint ignores here
         if (self.max_line_length != 0) {
             var current_line_number: u32 = 1;
             var current_line_length: u32 = 0;
@@ -82,24 +76,17 @@ pub const ASTAnalyzer = struct {
         // }
         // i = 0;
 
-        var const_ptr_enforced_fn_token_indices = std.ArrayList(u32).init(allocator);
-        defer const_ptr_enforced_fn_token_indices.deinit();
+        var last_enforced_fn_node_idx: u32 = 0;
         while (i < tree.nodes.len) : (i += 1) {
-            // Is it a function prototype? If so, we will need to check const pointer enforcement
-            var buffer: [1]u32 = [1]u32{0};
-            const fullProto = tree.fullFnProto(&buffer, i);
-            // TODO: can we know the length ahead of time?
-            var mutable_ptr_token_indices = std.ArrayList(u32).init(allocator);
-            defer mutable_ptr_token_indices.deinit();
+            if (i > last_enforced_fn_node_idx and self.enforce_const_pointers) {
+                // Is it a function prototype? If so, we will need to check const pointer enforcement
+                var buffer: [1]u32 = [1]u32{0};
+                const fullProto = tree.fullFnProto(&buffer, i);
+                if (fullProto == null) continue; // not a function prototype
 
-            if (self.enforce_const_pointers and fullProto != null) {
-                const name_token_idx = fullProto.?.name_token.?;
-                if (index_of(u32, &const_ptr_enforced_fn_token_indices, name_token_idx) != null) {
-                    // We already enforced this function
-                    continue;
-                }
-                try const_ptr_enforced_fn_token_indices.append(name_token_idx);
-
+                // TODO: can we know the length ahead of time?
+                var mutable_ptr_token_indices = std.ArrayList(u32).init(allocator);
+                defer mutable_ptr_token_indices.deinit();
                 for (fullProto.?.ast.params) |param_node_idx| {
                     const fullPtrType = tree.fullPtrType(param_node_idx);
                     if (fullPtrType == null) continue; // not a pointer
@@ -122,17 +109,21 @@ pub const ASTAnalyzer = struct {
                             const end = block.data.rhs;
                             if (start == 0) {
                                 check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(end), &tree);
+                                last_enforced_fn_node_idx = end;
                             } else if (end == 0) {
                                 check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(start), &tree);
+                                last_enforced_fn_node_idx = start;
                             } else {
                                 var k = start;
                                 while (k < end) : (k += 1) {
                                     check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(k), &tree);
                                 }
+                                last_enforced_fn_node_idx = end;
                             }
                             break;
                         } else if (block.tag == .block or block.tag == .block_semicolon) {
                             // empty block
+                            last_enforced_fn_node_idx = j;
                             break;
                         }
                     }
@@ -160,6 +151,7 @@ fn index_of(comptime T: type, array: *const std.ArrayList(T), item: T) ?usize {
     return null;
 }
 // Checks if any mutable_ptr_token_indices are mutated in node and if so, removes them from the list
+// TODO: why doesn't it notice that the pointer is used in swapRemove?
 fn check_ptr_usage(
     mutable_ptr_token_indices: *std.ArrayList(u32),
     node: std.zig.Ast.Node,
@@ -175,9 +167,12 @@ fn check_ptr_usage(
             }
         },
         // does not mutate
-        .identifier => {},
+        .identifier, .string_literal => {},
         // TODO: implement more of these
-        else => std.debug.print("Don't know if {} mutates a pointer\n", .{node.tag}),
+        else => {
+            const loc = tree.tokenLocation(0, node.main_token);
+            std.debug.print("Don't know if {} at {}:{} mutates a pointer\n", .{ node.tag, loc.line + 1, loc.column });
+        },
     }
 }
 
@@ -191,10 +186,13 @@ fn get_identifier(node_idx: std.zig.Ast.Node.Index, tree: *const std.zig.Ast) []
     const node = tree.nodes.get(node_idx);
     switch (node.tag) {
         .identifier => return tree.tokenSlice(node.main_token),
-        // rhs is the pointer
+        // rhs is the ID token
         .ptr_type_aligned => return get_identifier(node.data.rhs, tree),
+        // lhs is the ID of the accessed field
+        .field_access => return get_identifier(node.data.lhs, tree),
         else => {
-            std.debug.print("Don't know how to get identifier from node: {any}\n", .{node.tag});
+            const loc = tree.tokenLocation(0, node.main_token);
+            std.debug.print("Don't know how to get identifier from node {any} at {}:{}\n", .{ node.tag, loc.line + 1, loc.column });
             return "";
         },
     }
@@ -234,8 +232,10 @@ const Tests = struct {
     }
 
     test "line-length lints" {
-        var analyzer = ASTAnalyzer{};
-        analyzer.set_max_line_length(120);
+        var analyzer = ASTAnalyzer{
+            .max_line_length = 120,
+            .enforce_const_pointers = false,
+        };
         try run_tests(&analyzer, &.{
             TestCase{
                 .source = "std.debug.print(skerjghrekgkrejhgkjerhgkjhrjkhgjksrhgjkrshjgkhsrjkghksjfhgkjhskjghkjfddadwhjkwjfkwjfkewjfkjwkfwkgsfkjfwjfhweewtjewtwehjtwwrewghdfkhgsjkjkds);",
@@ -265,10 +265,10 @@ const Tests = struct {
     }
 
     test "const-pointer enforcement" {
-        // if (@import("builtin").is_test) return error.SkipZigTest; // TODO: implementation
-
-        var analyzer = ASTAnalyzer{};
-        analyzer.enforce_const_pointers = true;
+        var analyzer = ASTAnalyzer{
+            .max_line_length = 0,
+            .enforce_const_pointers = true,
+        };
 
         try run_tests(&analyzer, &.{
             TestCase{

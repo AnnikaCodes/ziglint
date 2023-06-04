@@ -18,10 +18,10 @@ fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCod
 }
 
 const args = (
-    \\--help                                Display this help and exit.
-    \\--version                             Output version information and exit.
-    \\--max-line-length <u32>               The maximum length of a line of code.
-    \\--require-const-pointer-params        Require all pointer parameters to functions be const.
+    \\--help                                  Display this help and exit.
+    \\--version                               Output version information and exit.
+    \\--max-line-length <u32>                 The maximum length of a line of code. Defaults to 120.
+    \\--no-require-const-pointer-params       Disable requiring all unmutated pointer parameters to functions be const.
     \\
 );
 
@@ -60,10 +60,10 @@ pub fn main() anyerror!void {
         return;
     }
 
-    const analyzer = analysis.ASTAnalyzer.new(
-        @field(res.args, "max-line-length") orelse 0,
-        @field(res.args, "require-const-pointer-params") != 0,
-    );
+    const analyzer = analysis.ASTAnalyzer{
+        .max_line_length = @field(res.args, "max-line-length") orelse 120,
+        .enforce_const_pointers = @field(res.args, "no-require-const-pointer-params") == 0,
+    };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
