@@ -5,11 +5,7 @@ const std = @import("std");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 
-const BOLD: []const u8 = "\x1b[1m";
-const RED: []const u8 = "\x1b[31m";
-const BOLD_MAGENTA: []const u8 = "\x1b[1;35m";
-const GREEN: []const u8 = "\x1b[32m";
-const RESET: []const u8 = "\x1b[0m";
+const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
 
 // for sorting
 // TODO figure out the idiomatic way to sort in zig
@@ -60,11 +56,6 @@ pub fn main() anyerror!void {
         return;
     }
 
-    const analyzer = analysis.ASTAnalyzer{
-        .max_line_length = @field(res.args, "max-line-length") orelse 0,
-        .enforce_const_pointers = @field(res.args, "no-require-const-pointer-params") == 0,
-    };
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer {
@@ -73,8 +64,63 @@ pub fn main() anyerror!void {
     }
 
     for (res.positionals) |file| {
+        var analyzer = try get_analyzer(file, allocator);
+
+        // command-line args override ziglintrc
+        if (@field(res.args, "max-line-length") != null) {
+            analyzer.max_line_length = @field(res.args, "max-line-length").?;
+        }
+        if (@field(res.args, "no-require-const-pointer-params") != 0) {
+            analyzer.enforce_const_pointers = false;
+        }
+
         try lint_file(file, allocator, analyzer, true);
     }
+}
+
+// Creates an ASTAnalyzer for the given file based on the nearest ziglintrc file.
+fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAnalyzer {
+    const ziglintrc_path = try find_ziglintrc(file_name, alloc);
+    if (ziglintrc_path != null) {
+        defer alloc.free(ziglintrc_path.?);
+
+        const config_raw = try std.fs.cwd().readFileAlloc(alloc, ziglintrc_path.?, MAX_CONFIG_BYTES);
+        defer alloc.free(config_raw);
+        return std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| {
+            std.log.err("ziglint: couldn't parse {s}: {}\n", .{ ziglintrc_path.?, err });
+            std.process.exit(1);
+        };
+    }
+    std.log.warn("No ziglintrc.json found! Using default configuration.", .{});
+    return analysis.ASTAnalyzer{
+        .max_line_length = 125,
+        .enforce_const_pointers = true,
+    };
+}
+
+// finds a ziglintrc file in the given directory or any parent directory
+// caller needs to free the result if it's there
+fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 {
+    const file = try std.fs.cwd().openFile(file_name, .{});
+    defer file.close();
+    var is_dir = (try file.stat()).kind == .directory;
+    var full_path = try std.fs.realpathAlloc(alloc, file_name);
+    defer alloc.free(full_path);
+    var nearest_dir = if (is_dir) full_path else std.fs.path.dirname(full_path);
+
+    while (nearest_dir != null) {
+        const ziglintrc = try std.fs.path.join(alloc, &[_][]const u8{ nearest_dir.?, "ziglintrc.json" });
+        const stat = std.fs.cwd().statFile(ziglintrc);
+        if (stat != error.FileNotFound) {
+            _ = try stat; // return error if there is one
+            return ziglintrc;
+        } else {
+            alloc.free(ziglintrc);
+        }
+
+        nearest_dir = std.fs.path.dirname(nearest_dir.?);
+    }
+    return null;
 }
 
 // Lints a file.
@@ -123,36 +169,44 @@ fn lint_file(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis
 
             const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.items, .{}, less_than);
             _ = sorted_faults;
-            const stdout = std.io.getStdOut().writer();
+            const stdout = std.io.getStdOut();
+            const stdout_writer = stdout.writer();
+
+            const use_color: bool = stdout.supportsAnsiEscapeCodes();
+            const bold_text: []const u8 = if (use_color) "\x1b[1m" else "";
+            const red_text: []const u8 = if (use_color) "\x1b[31m" else "";
+            const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
+            const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
+
             for (faults.items) |fault| {
-                try stdout.print("{s}{s}:{}:{}{s}: ", .{
-                    BOLD,
+                try stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
+                    bold_text,
                     file_name,
                     fault.line_number,
                     fault.column_number,
-                    RESET,
+                    end_text_fmt,
                 });
                 switch (fault.fault_type) {
-                    .LineTooLong => |len| try stdout.print(
+                    .LineTooLong => |len| try stdout_writer.print(
                         "line is {s}{} characters long{s}; the maximum is {}",
-                        .{ RED, len, RESET, analyzer.max_line_length },
+                        .{ red_text, len, end_text_fmt, analyzer.max_line_length },
                     ),
-                    .PointerParamNotConst => |name| try stdout.print(
+                    .PointerParamNotConst => |name| try stdout_writer.print(
                         "pointer parameter {s}{s}{s}{s} is not const{s}, but I think it can be",
                         .{
-                            BOLD_MAGENTA,
+                            bold_magenta,
                             name,
-                            RESET,
-                            RED,
-                            RESET,
+                            end_text_fmt,
+                            red_text,
+                            end_text_fmt,
                         },
                     ),
                 }
-                try stdout.writeAll("\n");
+                try stdout_writer.writeAll("\n");
             }
 
             // if (faults.items.len == 0) {
-            //     try stdout.print("{s}{s}{s}: {s}no faults found!{s}\n", .{ BOLD, file_name, RESET, GREEN, RESET });
+            //     try stdout.print("{s}{s}{s}: {s}no faults found!{s}\n", .{ bold_text, file_name, end_text_fmt, GREEN, end_text_fmt });
             // }
         },
         .directory => {
