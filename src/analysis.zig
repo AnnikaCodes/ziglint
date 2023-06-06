@@ -72,7 +72,8 @@ pub const ASTAnalyzer = struct {
         var i: u32 = 0;
 
         // while (i < tree.nodes.len) : (i += 1) {
-        //     std.debug.print("nodes[{}]: {}\n", .{i, tree.nodes.get(i)});
+        //     const loc = tree.tokenLocation(0, tree.nodes.get(i).main_token);
+        //     std.debug.print("nodes[{}]: {} ({}:{})\n", .{ i, tree.nodes.get(i).tag, loc.line + 1, loc.column });
         // }
         // i = 0;
 
@@ -83,6 +84,7 @@ pub const ASTAnalyzer = struct {
                 var buffer: [1]u32 = [1]u32{0};
                 const fullProto = tree.fullFnProto(&buffer, i);
                 if (fullProto == null) continue; // not a function prototype
+                std.debug.print("FOUND A FUNCTION PROTOTYPE: `{s}`\n", .{tree.tokenSlice(fullProto.?.name_token.?)});
 
                 // TODO: can we know the length ahead of time?
                 var mutable_ptr_token_indices = std.ArrayList(u32).init(allocator);
@@ -103,29 +105,34 @@ pub const ASTAnalyzer = struct {
                     var j = i;
 
                     while (j < tree.nodes.len) : (j += 1) {
-                        const block = tree.nodes.get(j);
-                        if (block.tag == .block_two or block.tag == .block_two_semicolon) {
-                            const start = block.data.lhs;
-                            const end = block.data.rhs;
-                            if (start == 0) {
-                                check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(end), &tree);
-                                last_enforced_fn_node_idx = end;
-                            } else if (end == 0) {
-                                check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(start), &tree);
-                                last_enforced_fn_node_idx = start;
-                            } else {
-                                var k = start;
-                                while (k < end) : (k += 1) {
-                                    check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(k), &tree);
-                                }
-                                last_enforced_fn_node_idx = end;
+                        const fn_decl = tree.nodes.get(j);
+                        if (fn_decl.tag != .fn_decl) continue; // TODO: can we just skip to the fn_decl instead of doing the fullProto stuff?
+                        const block = tree.nodes.get(fn_decl.data.rhs);
+
+                        const loc = tree.tokenLocation(0, block.main_token);
+                        std.log.debug("{} {}:{}\n", .{ block, loc.line + 1, loc.column });
+
+                        var cur_node = block.data.lhs;
+                        var end = block.data.rhs;
+                        std.debug.print("BLOCK: {} to {}\n", .{ cur_node, end });
+                        if (cur_node > 0 and end > 0) {
+                            while (cur_node < end) : (cur_node += 1) {
+                                check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(cur_node), &tree);
                             }
-                            break;
-                        } else if (block.tag == .block or block.tag == .block_semicolon) {
-                            // empty block
-                            last_enforced_fn_node_idx = j;
-                            break;
+                            last_enforced_fn_node_idx = end;
+                        } else if (cur_node > 0) {
+                            // loop over th eblock
+                            while (cur_node < tree.nodes.len) : (cur_node += 1) {
+                                const node = tree.nodes.get(cur_node);
+                                if (node.tag == .block or node.tag == .block_two or node.tag == .block_semicolon or node.tag == .block_two_semicolon) break;
+                                check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(cur_node), &tree);
+                            }
+                            last_enforced_fn_node_idx = cur_node + 1;
+                        } else {
+                            std.log.warn("fn_decl has no block: {}\n", .{fn_decl});
+                            last_enforced_fn_node_idx = j + 1;
                         }
+                        break;
                     }
 
                     for (mutable_ptr_token_indices.items) |tok| {
@@ -167,7 +174,32 @@ fn check_ptr_usage(
             }
         },
         // does not mutate
-        .identifier, .string_literal => {},
+        // actually wait, TODO: does ptr_type_aligned ever mutate a pointer in pointer-to-pointer situations?
+        .identifier, .string_literal, .number_literal, .ptr_type_aligned => {},
+        // these just hold other stuff
+        .if_simple, .equal_equal => {
+            // lhs is the condition express, rhs is what is executed if it's true
+            // we must check them both!
+            check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.lhs), tree);
+            check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.rhs), tree);
+        },
+        .block_two, .block_two_semicolon => {
+            if (node.data.rhs > node.data.lhs) {
+                var cur_node = node.data.lhs;
+                while (cur_node < node.data.rhs) : (cur_node += 1) {
+                    check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(cur_node), tree);
+                }
+            } else {
+                // gosh darn it
+                // loop over the block
+                var cur_node = node.data.lhs;
+                while (cur_node < tree.nodes.len) : (cur_node += 1) {
+                    const next = tree.nodes.get(cur_node);
+                    if (next.tag == .block or next.tag == .block_two or next.tag == .block_semicolon or next.tag == .block_two_semicolon) break;
+                    check_ptr_usage(mutable_ptr_token_indices, next, tree);
+                }
+            }
+        },
         // TODO: implement more of these
         else => {
             const loc = tree.tokenLocation(0, node.main_token);
@@ -217,6 +249,7 @@ const Tests = struct {
             const faults = try analyzer.analyze(std.testing.allocator, tree);
             defer faults.deinit();
 
+            std.debug.print("FAULTS: {any}\n", .{faults.items});
             try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
 
             if (case.expected_faults.len == 0) {
@@ -314,6 +347,7 @@ const Tests = struct {
                 \\   if (*ptr == 0) {
                 \\        *ptr = 1;
                 \\    }
+                \\}
                 ,
                 .expected_faults = &.{},
             },
