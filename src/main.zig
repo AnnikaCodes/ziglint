@@ -93,17 +93,18 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, ziglintrc_path.?, MAX_CONFIG_BYTES);
         defer alloc.free(config_raw);
         return std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| {
-            var field_names: [fields.len][]const u8 = undefined;
-            inline for (fields, 0..) |field, i| {
-                field_names[i] = field.name;
-            }
-            const fields3 = try std.mem.join(alloc, ", ", &field_names);
-            defer alloc.free(fields3);
             switch (err) {
                 error.UnknownField => {
+                    var field_names: [fields.len][]const u8 = undefined;
+                    inline for (fields, 0..) |field, i| {
+                        field_names[i] = field.name;
+                    }
+                    const fields_str = try std.mem.join(alloc, ", ", &field_names);
+                    defer alloc.free(fields_str);
+
                     std.log.err(
                         "an unknown field was encountered in ziglintrc.json\nValid fields are: {s}",
-                        .{fields3},
+                        .{fields_str},
                     );
                 },
                 else => std.log.err("error parsing ziglintrc.json: {any}", .{err}),
