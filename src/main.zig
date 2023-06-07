@@ -7,6 +7,8 @@ const analysis = @import("./analysis.zig");
 
 const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
 
+const fields = std.meta.fields(analysis.ASTAnalyzer);
+
 // for sorting
 // TODO figure out the idiomatic way to sort in zig
 fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCodeFault) bool {
@@ -42,12 +44,14 @@ pub fn main() anyerror!void {
             "<TODO: add revision here>" ++
             "\nreport bugs and request features at https://github.com/AnnikaCodes/ziglint\n");
         return;
-    } else if (res.args.help != 0 or res.positionals.len == 0) {
+    } else if (res.args.help != 0) {
         const stdout = std.io.getStdOut().writer();
         try stdout.writeAll(
             \\ziglint: configurable static code analysis for the Zig language
             \\
-            \\usage: ziglint [options] <files>
+            \\usage: ziglint [options] [files]
+            \\
+            \\([files] defaults to the current directory if not specified)
             \\
             \\options:
             \\
@@ -63,7 +67,8 @@ pub fn main() anyerror!void {
         if (deinit_status == .leak) @panic("MEMORY LEAK");
     }
 
-    for (res.positionals) |file| {
+    const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
+    for (files) |file| {
         var analyzer = try get_analyzer(file, allocator);
 
         // command-line args override ziglintrc
@@ -74,7 +79,7 @@ pub fn main() anyerror!void {
             analyzer.enforce_const_pointers = false;
         }
 
-        try lint_file(file, allocator, analyzer, true);
+        try lint(file, allocator, analyzer, true);
     }
 }
 
@@ -84,13 +89,29 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
     if (ziglintrc_path != null) {
         defer alloc.free(ziglintrc_path.?);
 
+        std.log.info("using config file {s}", .{ziglintrc_path.?});
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, ziglintrc_path.?, MAX_CONFIG_BYTES);
         defer alloc.free(config_raw);
         return std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| {
-            std.log.err("ziglint: couldn't parse {s}: {}\n", .{ ziglintrc_path.?, err });
+            var field_names: [fields.len][]const u8 = undefined;
+            inline for (fields, 0..) |field, i| {
+                field_names[i] = field.name;
+            }
+            const fields3 = try std.mem.join(alloc, ", ", &field_names);
+            defer alloc.free(fields3);
+            switch (err) {
+                error.UnknownField => {
+                    std.log.err(
+                        "an unknown field was encountered in ziglintrc.json\nValid fields are: {s}",
+                        .{fields3},
+                    );
+                },
+                else => std.log.err("error parsing ziglintrc.json: {any}", .{err}),
+            }
             std.process.exit(1);
         };
     }
+
     std.log.warn("No ziglintrc.json found! Using default configuration.", .{});
     return analysis.ASTAnalyzer{
         .max_line_length = 125,
@@ -126,7 +147,7 @@ fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 
 // Lints a file.
 //
 // If it's a directory, recursively search it for .zig files and lint them.
-fn lint_file(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTAnalyzer, is_top_level: bool) !void {
+fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTAnalyzer, is_top_level: bool) !void {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.AccessDenied => std.log.err("ziglint: access denied: '{s}'", .{file_name}),
@@ -220,7 +241,7 @@ fn lint_file(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis
             while (entry != null) : (entry = try iterable.next()) {
                 const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
                 defer alloc.free(full_name);
-                try lint_file(full_name, alloc, analyzer, false);
+                try lint(full_name, alloc, analyzer, false);
             }
         },
         else => {
