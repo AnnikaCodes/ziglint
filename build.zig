@@ -3,7 +3,15 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
+    // create GPA allocator
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) @panic("MEMORY LEAK");
+    }
+
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -59,12 +67,25 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
     const run_unit_tests = b.addRunArtifact(unit_tests);
+
+    // Creates a step to run the testcases/run.zig unit test runner
+    const integration_tests = b.addExecutable(.{
+        .root_source_file = .{ .path = "testcases/run.zig" },
+        .name = "integration_test",
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    const ziglint_path = try std.fs.path.join(allocator, &.{ b.exe_dir, "ziglint" });
+    defer allocator.free(ziglint_path);
+    run_integration_tests.addArgs(&.{ziglint_path});
+    run_integration_tests.cwd = "testcases";
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
-    const test_step = b.step("test", "Run unit tests");
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_integration_tests.step);
     test_step.dependOn(&run_unit_tests.step);
 }

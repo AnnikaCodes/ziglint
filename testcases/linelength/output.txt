@@ -1,0 +1,3 @@
+./longlines.zig:3:100: line is 118 characters long; the maximum is 100
+./longlines.zig:4:100: line is 124 characters long; the maximum is 100
+./longlines.zig:5:100: line is 120 characters long; the maximum is 100
