@@ -84,7 +84,7 @@ pub const ASTAnalyzer = struct {
                 var buffer: [1]u32 = [1]u32{0};
                 const fullProto = tree.fullFnProto(&buffer, i);
                 if (fullProto == null) continue; // not a function prototype
-                std.debug.print("FOUND A FUNCTION PROTOTYPE: `{s}`\n", .{tree.tokenSlice(fullProto.?.name_token.?)});
+                // std.debug.print("FOUND A FUNCTION PROTOTYPE: `{s}`\n", .{tree.tokenSlice(fullProto.?.name_token.?)});
 
                 // TODO: can we know the length ahead of time?
                 var mutable_ptr_token_indices = std.ArrayList(u32).init(allocator);
@@ -95,7 +95,7 @@ pub const ASTAnalyzer = struct {
                     if (fullPtrType.?.const_token == null) { // pointer is mutable
                         // subtract 2 since main_token is the asterisk - we skip the '*' and the ':'
                         const token = fullPtrType.?.ast.main_token - 2;
-                        std.debug.print("FOUND A MUTABLE POINTER: `{s}`\n", .{tree.tokenSlice(token)});
+                        // std.debug.print("FOUND A MUTABLE POINTER: `{s}`\n", .{tree.tokenSlice(token)});
                         try mutable_ptr_token_indices.append(token);
                     }
                 }
@@ -114,7 +114,7 @@ pub const ASTAnalyzer = struct {
 
                         var cur_node = block.data.lhs;
                         var end = block.data.rhs;
-                        std.debug.print("BLOCK: {} to {}\n", .{ cur_node, end });
+                        // std.debug.print("BLOCK: {} to {}\n", .{ cur_node, end });
                         if (cur_node > 0 and end > 0) {
                             while (cur_node < end) : (cur_node += 1) {
                                 check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(cur_node), &tree);
@@ -203,7 +203,7 @@ fn check_ptr_usage(
         // TODO: implement more of these
         else => {
             const loc = tree.tokenLocation(0, node.main_token);
-            std.debug.print("Don't know if {} at {}:{} mutates a pointer\n", .{ node.tag, loc.line + 1, loc.column });
+            // std.debug.print("Don't know if {} at {}:{} mutates a pointer\n", .{ node.tag, loc.line + 1, loc.column });
         },
     }
 }
@@ -224,7 +224,7 @@ fn get_identifier(node_idx: std.zig.Ast.Node.Index, tree: *const std.zig.Ast) []
         .field_access => return get_identifier(node.data.lhs, tree),
         else => {
             const loc = tree.tokenLocation(0, node.main_token);
-            std.debug.print("Don't know how to get identifier from node {any} at {}:{}\n", .{ node.tag, loc.line + 1, loc.column });
+            // std.debug.print("Don't know how to get identifier from node {any} at {}:{}\n", .{ node.tag, loc.line + 1, loc.column });
             return "";
         },
     }
@@ -249,7 +249,7 @@ const Tests = struct {
             const faults = try analyzer.analyze(std.testing.allocator, tree);
             defer faults.deinit();
 
-            std.debug.print("FAULTS: {any}\n", .{faults.items});
+            // std.debug.print("FAULTS: {any}\n", .{faults.items});
             try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
 
             if (case.expected_faults.len == 0) {
