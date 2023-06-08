@@ -108,11 +108,11 @@ pub const ASTAnalyzer = struct {
                     });
                 }
 
-                // check for ziglint: off remark
-                // if (idx > "ziglint: off".len) std.debug.print("is_comment: {}, line: {}, treebit: '{s}'\n", .{is_comment, current_line_number, tree.source[(idx - "ziglint: off".len )..idx]});
+                // check for ziglint: ignore remark
+                // if (idx > "ziglint: ignore".len) std.debug.print("is_comment: {}, line: {}, treebit: '{s}'\n", .{is_comment, current_line_number, tree.source[(idx - "ziglint: ignore".len )..idx]});
                 if (is_comment and
-                    idx > "ziglint: off\n".len and
-                    std.mem.eql(u8, tree.source[(idx - "ziglint: off".len)..idx], "ziglint: off"))
+                    idx > "ziglint: ignore\n".len and
+                    std.mem.eql(u8, tree.source[(idx - "ziglint: ignore".len)..idx], "ziglint: ignore"))
                 {
                     // if it's standalone, then disable ziglint for the next line
                     // otherwise, disable for this line
