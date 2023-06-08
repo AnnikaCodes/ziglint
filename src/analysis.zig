@@ -18,6 +18,40 @@ pub const SourceCodeFault = struct {
     fault_type: SourceCodeFaultType,
 };
 
+const SourceCodeFaultTracker = struct {
+    faults: std.ArrayList(SourceCodeFault),
+    ziglint_disabled_lines: std.AutoHashMap(usize, void),
+
+    pub fn new(allocator: std.mem.Allocator) SourceCodeFaultTracker {
+        return SourceCodeFaultTracker{
+            .faults = std.ArrayList(SourceCodeFault).init(allocator),
+            // https://github.com/ziglang/zig/issues/6919 :(
+            .ziglint_disabled_lines = std.AutoHashMap(usize, void).init(allocator),
+        };
+    }
+
+    pub fn disable_line(self: *SourceCodeFaultTracker, line_number: u32) !void {
+        try self.ziglint_disabled_lines.put(line_number, {});
+        for (self.faults.items, 0..) |fault, idx| {
+            if (fault.line_number == line_number) {
+                _ = self.faults.swapRemove(idx);
+            }
+        }
+    }
+
+    pub fn add(self: *SourceCodeFaultTracker, fault: SourceCodeFault) !void {
+        if (self.ziglint_disabled_lines.get(fault.line_number) != null) {
+            return;
+        }
+        try self.faults.append(fault);
+    }
+
+    pub fn deinit(self: *SourceCodeFaultTracker) void {
+        self.faults.deinit();
+        self.ziglint_disabled_lines.deinit();
+    }
+};
+
 const SourceCodeFaultType = union(enum) {
     // Line was too long. Value is the length of the line.
     LineTooLong: u32,
@@ -43,28 +77,53 @@ pub const ASTAnalyzer = struct {
     //
     // Caller must deinit the array.
     // TODO: can just return a slice?
-    pub fn analyze(self: *const ASTAnalyzer, allocator: std.mem.Allocator, tree: std.zig.Ast) !std.ArrayList(SourceCodeFault) {
-        var faults = std.ArrayList(SourceCodeFault).init(allocator);
+    pub fn analyze(self: *const ASTAnalyzer, allocator: std.mem.Allocator, tree: std.zig.Ast) !SourceCodeFaultTracker {
+        var faults = SourceCodeFaultTracker.new(allocator);
 
         // Enforce line length as needed
         // TODO: look for and store ziglint ignores here
-        if (self.max_line_length != 0) {
-            var current_line_number: u32 = 1;
-            var current_line_length: u32 = 0;
-            for (tree.source, 0..) |c, idx| {
-                current_line_length += 1;
-                if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
-                    // The line has ended
-                    if (current_line_length > self.max_line_length) {
-                        try faults.append(SourceCodeFault{
-                            .line_number = current_line_number,
-                            .column_number = self.max_line_length,
-                            .fault_type = SourceCodeFaultType{ .LineTooLong = current_line_length },
-                        });
-                    }
-                    current_line_number += 1;
-                    current_line_length = 0;
+        // is there a better way to do ziglint ignores via the tokenizer or something?
+        var current_line_number: u32 = 1;
+        var current_line_length: u32 = 0;
+        var is_comment = false;
+        var line_has_non_comment_content = false;
+        for (tree.source, 0..) |c, idx| {
+            current_line_length += 1;
+            if (c == '/' and tree.source[idx + 1] == '/') {
+                // Comment
+                is_comment = true;
+            }
+            if (!line_has_non_comment_content and !is_comment and c != '/' and c != '\t' and c != ' ') {
+                // std.debug.print("LINE {}: NOT A COMMENT: '{c}'\n", .{current_line_number, c});
+                line_has_non_comment_content = true;
+            }
+
+            if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
+                // The line has ended
+                if (self.max_line_length != 0 and current_line_length > self.max_line_length) {
+                    try faults.add(SourceCodeFault{
+                        .line_number = current_line_number,
+                        .column_number = self.max_line_length,
+                        .fault_type = SourceCodeFaultType{ .LineTooLong = current_line_length },
+                    });
                 }
+
+                // check for ziglint: off remark
+                // if (idx > "ziglint: off".len) std.debug.print("is_comment: {}, line: {}, treebit: '{s}'\n", .{is_comment, current_line_number, tree.source[(idx - "ziglint: off".len )..idx]});
+                if (is_comment and
+                    idx > "ziglint: off\n".len and
+                    std.mem.eql(u8, tree.source[(idx - "ziglint: off".len)..idx], "ziglint: off"))
+                {
+                    // if it's standalone, then disable ziglint for the next line
+                    // otherwise, disable for this line
+                    const line = if (line_has_non_comment_content) current_line_number else current_line_number + 1;
+                    try faults.disable_line(line);
+                }
+
+                current_line_number += 1;
+                current_line_length = 0;
+                is_comment = false;
+                line_has_non_comment_content = false;
             }
         }
 
@@ -129,7 +188,7 @@ pub const ASTAnalyzer = struct {
                             }
                             last_enforced_fn_node_idx = cur_node + 1;
                         } else {
-                            std.log.warn("fn_decl has no block: {}\n", .{fn_decl});
+                            // std.log.warn("fn_decl has no block: {}\n", .{fn_decl});
                             last_enforced_fn_node_idx = j + 1;
                         }
                         break;
@@ -137,7 +196,7 @@ pub const ASTAnalyzer = struct {
 
                     for (mutable_ptr_token_indices.items) |tok| {
                         const location = tree.tokenLocation(0, tok);
-                        try faults.append(SourceCodeFault{
+                        try faults.add(SourceCodeFault{
                             .line_number = location.line + 1, // is +1 really right here?
                             .column_number = location.column,
                             .fault_type = SourceCodeFaultType{ .PointerParamNotConst = tree.tokenSlice(tok) },
@@ -202,7 +261,7 @@ fn check_ptr_usage(
         },
         // TODO: implement more of these
         else => {
-            const loc = tree.tokenLocation(0, node.main_token);
+            // const loc = tree.tokenLocation(0, node.main_token);
             // std.debug.print("Don't know if {} at {}:{} mutates a pointer\n", .{ node.tag, loc.line + 1, loc.column });
         },
     }
@@ -224,6 +283,7 @@ fn get_identifier(node_idx: std.zig.Ast.Node.Index, tree: *const std.zig.Ast) []
         .field_access => return get_identifier(node.data.lhs, tree),
         else => {
             const loc = tree.tokenLocation(0, node.main_token);
+            _ = loc;
             // std.debug.print("Don't know how to get identifier from node {any} at {}:{}\n", .{ node.tag, loc.line + 1, loc.column });
             return "";
         },
@@ -246,16 +306,15 @@ const Tests = struct {
             var tree = try std.zig.Ast.parse(std.testing.allocator, case.source, .zig);
             defer tree.deinit(std.testing.allocator);
 
-            const faults = try analyzer.analyze(std.testing.allocator, tree);
+            var faults = try analyzer.analyze(std.testing.allocator, tree);
             defer faults.deinit();
 
-            // std.debug.print("FAULTS: {any}\n", .{faults.items});
-            try std.testing.expectEqual(case.expected_faults.len, faults.items.len);
+            try std.testing.expectEqual(case.expected_faults.len, faults.faults.items.len);
 
             if (case.expected_faults.len == 0) {
-                try std.testing.expectEqual(faults.items.len, 0);
+                try std.testing.expectEqual(faults.faults.items.len, 0);
             } else {
-                for (faults.items, 0..) |fault, idx| {
+                for (faults.faults.items, 0..) |fault, idx| {
                     try std.testing.expectEqual(case.expected_faults[idx].line_number, fault.line_number);
                     try std.testing.expectEqual(case.expected_faults[idx].column_number, fault.column_number);
                     try std.testing.expectEqualDeep(case.expected_faults[idx].fault_type, fault.fault_type);

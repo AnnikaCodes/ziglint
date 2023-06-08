@@ -184,12 +184,12 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
 
             var ast = try std.zig.Ast.parse(alloc, contents, .zig);
             defer ast.deinit(alloc);
-            const faults = try analyzer.analyze(alloc, ast);
+            var faults = try analyzer.analyze(alloc, ast);
             defer faults.deinit();
 
             // TODO just return faults.items
 
-            const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.items, .{}, less_than);
+            const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.faults.items, .{}, less_than);
             _ = sorted_faults;
             const stdout = std.io.getStdOut();
             const stdout_writer = stdout.writer();
@@ -200,7 +200,7 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
             const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
             const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
 
-            for (faults.items) |fault| {
+            for (faults.faults.items) |fault| {
                 try stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
                     bold_text,
                     file_name,

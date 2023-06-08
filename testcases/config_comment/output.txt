@@ -1,0 +1,4 @@
+./ziglint_off.zig:4:100: line is 112 characters long; the maximum is 100
+./ziglint_off.zig:7:100: line is 112 characters long; the maximum is 100
+./ziglint_off.zig:11:25: pointer parameter ptr is not const, but I think it can be
+./ziglint_off.zig:13:25: pointer parameter ptr is not const, but I think it can be
