@@ -19,7 +19,7 @@ const args = (
     \\--help                                  Display this help and exit.
     \\--version                               Output version information and exit.
     \\--max-line-length <u32>                 The maximum length of a line of code
-    \\--no-require-const-pointer-params       Disable requiring all unmutated pointer parameters to functions be const.
+    \\--require-const-pointer-params          Disable requiring all unmutated pointer parameters to functions be const. (Rule currently disabled due to incomplete implementation.)
     \\
 );
 
@@ -75,8 +75,8 @@ pub fn main() anyerror!void {
         if (@field(res.args, "max-line-length") != null) {
             analyzer.max_line_length = @field(res.args, "max-line-length").?;
         }
-        if (@field(res.args, "no-require-const-pointer-params") != 0) {
-            analyzer.enforce_const_pointers = false;
+        if (@field(res.args, "require-const-pointer-params") != 0) {
+            analyzer.enforce_const_pointers = true;
         }
 
         try lint(file, allocator, analyzer, true);
@@ -114,10 +114,7 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
     }
 
     std.log.warn("No ziglintrc.json found! Using default configuration.", .{});
-    return analysis.ASTAnalyzer{
-        .max_line_length = 125,
-        .enforce_const_pointers = true,
-    };
+    return analysis.ASTAnalyzer{};
 }
 
 // finds a ziglintrc file in the given directory or any parent directory
