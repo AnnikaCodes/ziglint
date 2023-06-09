@@ -23,7 +23,7 @@ jobs:
               with:
                 version: master
             - name: Compile executables
-              run: zig build -Dtarget=${{ matrix.os }}-${{ matrix.cpu }} -Doptimize=ReleaseFast
+              run: zig build -Dtarget=${{ matrix.cpu }}-${{ matrix.os }} -Doptimize=ReleaseFast
             - name: Upload binary (existing release)
               if: ${{ github.event_name == 'release'}}
               run: gh release upload ${{ github.ref }} zig-out/bin/ziglint#${{ matrix.os }}-${{ matrix.cpu }}
