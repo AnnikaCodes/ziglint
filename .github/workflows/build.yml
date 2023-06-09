@@ -1,0 +1,43 @@
+# Builds a `ziglint` binary and posts it to GH
+
+on:
+    release:
+        types: [created]
+    push:
+        branches: [main]
+
+name: Build/Publish Binary
+jobs:
+    build_publish:
+        strategy:
+            matrix:
+                cpu: [x86_64, aarch64]
+                os: [linux, macos, windows]
+        runs-on: ubuntu-latest
+        env:
+            GH_TOKEN: ${{ github.token }}
+        steps:
+            - uses: actions/checkout@v2
+              with:
+                submodules: recursive
+            - name: Install nightly Zig
+              uses: goto-bus-stop/setup-zig@v1
+              with:
+                version: master
+            - name: Compile
+              run: zig build -Dtarget=${{ matrix.cpu }}-${{ matrix.os }} -Doptimize=ReleaseFast
+            - name: Set binary suffix (Windows)
+              if: ${{ matrix.os == 'windows' }}
+              run: echo "SUFFIX=.exe" >> "$GITHUB_ENV"
+            - name: Upload (existing release)
+              if: ${{ github.event_name == 'release'}}
+              run: |
+                mv zig-out/bin/ziglint${{ env.SUFFIX }} zig-out/bin/ziglint-${{ github.ref }}-${{ matrix.os }}-${{ matrix.cpu }}${{ env.SUFFIX }}
+                gh release upload ${{ github.ref }} zig-out/bin/*${{ env.SUFFIX }}
+            - name: Upload (HEAD)
+              if: ${{ github.event_name == 'push' }}
+              run: |
+                mv zig-out/bin/ziglint${{ env.SUFFIX }} zig-out/bin/ziglint-${{ matrix.os }}-${{ matrix.cpu }}${{ env.SUFFIX }}
+                gh release upload latest zig-out/bin/*${{ env.SUFFIX }} --clobber
+                gh release edit --target ${{ github.sha }} latest
+

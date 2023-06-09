@@ -21,6 +21,8 @@ jobs:
           version: master
       - name: Check code format
         run: zig fmt --check .
+      - name: Debug
+        uses: mxschmitt/action-tmate@v3
       - name: Run tests
         run: zig build test
       - name: Build executable
