@@ -1,0 +1,32 @@
+# Builds a `ziglint` binary and posts it to GH
+
+on:
+    release:
+        types: [created]
+    push:
+        branches: [main]
+
+name: Build/Publish Binary
+jobs:
+    strategy:
+        matrix:
+            cpu: [x86_64, aarch64]
+            os: [linux, macos, windows]
+    compile:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+              with:
+                submodules: recursive
+            - name: Install nightly Zig
+              uses: goto-bus-stop/setup-zig@v1
+              with:
+                version: master
+            - name: Compile executables
+              run: zig build -Dtarget=${{ matrix.os }}-${{ matrix.cpu }} -Doptimize=ReleaseFast
+            - name: Upload binary (existing release)
+              if: ${{ github.event_name == 'release'}}
+              run: gh release upload ${{ github.ref }} zig-out/bin/ziglint#${{ matrix.os }}-${{ matrix.cpu }}
+            - name: Upload binary (HEAD)
+              if: ${{ github.event_name == 'push' }}
+              run: gh release create latest --notes "The latest ziglint from commit ${{ github.sha }}. May be broken or buggy." zig-out/bin/ziglint#${{ matrix.os }}-${{ matrix.cpu }}
