@@ -8,11 +8,11 @@ on:
 
 name: Build/Publish Binary
 jobs:
-    strategy:
-        matrix:
-            cpu: [x86_64, aarch64]
-            os: [linux, macos, windows]
     compile:
+        strategy:
+            matrix:
+                cpu: [x86_64, aarch64]
+                os: [linux, macos, windows]
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
