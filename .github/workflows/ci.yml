@@ -7,6 +7,14 @@ on:
     branches: [ main ]
   schedule:
     - cron: "0 22 * * 5" # every Friday at 3pm Pacific
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: false
+        default: false
+
 
 jobs:
   build:
@@ -21,7 +29,8 @@ jobs:
           version: master
       - name: Check code format
         run: zig fmt --check .
-      - name: Debug
+      - name: Set up debugging tmate session
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
         uses: mxschmitt/action-tmate@v3
       - name: Run tests
         run: zig build test
