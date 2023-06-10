@@ -67,7 +67,7 @@ pub fn main() anyerror!void {
         if (deinit_status == .leak) @panic("MEMORY LEAK");
     }
 
-    const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8 { "." };
+    const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
     for (files) |file| {
         var analyzer = try get_analyzer(file, allocator);
 
