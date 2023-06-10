@@ -76,7 +76,7 @@ pub fn main() anyerror!void {
             analyzer.max_line_length = @field(res.args, "max-line-length").?;
         }
         if (@field(res.args, "require-const-pointer-params") != 0) {
-            analyzer.enforce_const_pointers = true;
+            analyzer.enforce_const_pointers = false;
         }
 
         try lint(file, allocator, analyzer, true);
@@ -92,7 +92,7 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
         std.log.info("using config file {s}", .{ziglintrc_path.?});
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, ziglintrc_path.?, MAX_CONFIG_BYTES);
         defer alloc.free(config_raw);
-        return std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| {
+        const analyzer = std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| err_handle_blk: {
             switch (err) {
                 error.UnknownField => {
                     var field_names: [fields.len][]const u8 = undefined;
@@ -107,13 +107,14 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
                         .{fields_str},
                     );
                 },
-                else => std.log.err("error parsing ziglintrc.json: {any}", .{err}),
+                else => std.log.err("couldn't parse ziglintrc.json: {any}", .{err}),
             }
-            std.process.exit(1);
+            break :err_handle_blk null;
         };
+        if (analyzer != null) return analyzer.?;
     }
 
-    std.log.warn("No ziglintrc.json found! Using default configuration.", .{});
+    std.log.warn("No valid ziglintrc.json found! Using default configuration.", .{});
     return analysis.ASTAnalyzer{};
 }
 
