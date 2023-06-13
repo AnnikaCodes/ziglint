@@ -4,6 +4,7 @@ const clap = @import("./lib/clap/clap.zig");
 const std = @import("std");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
+const upgrade = @import("./upgrade.zig");
 
 const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
 
@@ -15,16 +16,36 @@ fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCod
     return a.line_number < b.line_number;
 }
 
-const args = (
-    \\--help                                  Display this help and exit.
-    \\--version                               Output version information and exit.
-    \\--max-line-length <u32>                 The maximum length of a line of code
-    \\--require-const-pointer-params          Disable requiring all unmutated pointer parameters to functions be const. (Rule currently disabled due to incomplete implementation.)
+const argument_definitions = (
+    \\--help                                  display this help and exit
+    \\--version                               output version information and exit
+    \\--max-line-length <u32>                 set the maximum length of a line of code
+    \\--require-const-pointer-params          require all unmutated pointer parameters to functions be `const`
     \\
 );
 
 pub fn main() anyerror!void {
-    const params = comptime clap.parseParamsComptime(args ++ "<str>...");
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) @panic("MEMORY LEAK");
+    }
+    // zig-clap doesn't support subcommands, so we handle `upgrade` ourselves
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+    if (args.len >= 2 and std.mem.eql(u8, args[1], "upgrade")) {
+        // upgrade path
+        var override_url: ?[]const u8 = null;
+        if (args.len >= 3) {
+            override_url = args[2];
+            std.log.info("overriding GitHub API URL to {s}", .{override_url.?});
+        }
+        try upgrade.upgrade(allocator, override_url);
+        return;
+    }
+
+    const params = comptime clap.parseParamsComptime(argument_definitions ++ "<str>...");
 
     var diag = clap.Diagnostic{};
     var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
@@ -47,24 +68,17 @@ pub fn main() anyerror!void {
     } else if (res.args.help != 0) {
         const stdout = std.io.getStdOut().writer();
         try stdout.writeAll(
-            \\ziglint: configurable static code analysis for the Zig language
+            \\ziglint: configurable static code analysis for the Zig programming language
             \\
-            \\usage: ziglint [options] [files]
-            \\
-            \\([files] defaults to the current directory if not specified)
+            \\usage:
+            \\      to analyze code:                      ziglint [options] [files]
+            \\      to upgrade to the latest version:     ziglint upgrade
             \\
             \\options:
             \\
         );
         try clap.help(stdout, clap.Help, &params, .{});
         return;
-    }
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) @panic("MEMORY LEAK");
     }
 
     const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
