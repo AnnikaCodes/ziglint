@@ -9,13 +9,14 @@ const MAX_API_RESPONSE_SIZE = 64 * 1024; // 64 kilobytes
 
 const EXECUTABLE_ = std.Target.exeFileExtSimple(builtin.target.cpu.arch, builtin.target.os.tag);
 const GithubReleaseAsset = struct {
-    browser_download_url: []const u8,
+    url: []const u8,
     name: []const u8,
+    content_type: []const u8,
     size: u32,
 
     pub fn format(value: GithubReleaseAsset, comptime fmt: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
-        try writer.print("GithubReleaseAsset{{ .name = \"{s}\", .browser_download_url = \"{s}\", .size = {} }}", .{ value.name, value.browser_download_url, value.size });
+        try writer.print("GithubReleaseAsset{{ .name = \"{s}\", .url = \"{s}\", .size = {}, .content_type = \"{s}\" }}", .{ value.name, value.url, value.size, value.content_type });
     }
 };
 
@@ -105,8 +106,20 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
         if (std.mem.eql(u8, asset.name, executable_name)) {
             std.log.info("downloading {s} version {s}", .{ asset.name, latest_version });
 
-            const uri = try std.Uri.parse(asset.browser_download_url);
-            var ziglint_request = try client.request(.GET, uri, .{ .allocator = alloc }, .{});
+            const uri = try std.Uri.parse(asset.url);
+            var headers = std.http.Headers.init(alloc);
+            defer headers.deinit();
+            try headers.append("Accept", asset.content_type);
+
+            // the redirect URI becomes EVIL and CORRUPTED due to bugs
+            // specifically, the %s from %-escapes in the provided URL are escaped again
+            // lib/std/Uri.zig has been patched
+            //
+            // fn isQueryChar(c: u8) bool {
+            //     return isPathChar(c) or c == '?' or c == '%'; // preescaped
+            // }
+
+            var ziglint_request = try client.request(.GET, uri, headers, .{});
             defer ziglint_request.deinit();
 
             try ziglint_request.start();
@@ -118,7 +131,11 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             var tmpfile = try tmpdir.dir.createFile(executable_name, .{});
             defer tmpfile.close();
 
-            // TODO: download the file, search for ziglint in the path, and move it there
+            // reuse the API buffer to write the file to disk
+            var n = try ziglint_request.readAll(api_buffer);
+            while (n > 0) : (n = try ziglint_request.readAll(api_buffer)) {
+                try tmpfile.writeAll(api_buffer[0..n]);
+            }
 
             return;
         }
