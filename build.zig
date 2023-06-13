@@ -62,12 +62,18 @@ pub fn build(b: *std.Build) !void {
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
-    const unit_tests = b.addTest(.{
+    const analysis_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/analysis.zig" },
         .target = target,
         .optimize = optimize,
     });
-    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const semver_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/semver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_analysis_tests = b.addRunArtifact(analysis_tests);
+    const run_semver_tests = b.addRunArtifact(semver_tests);
 
     // Creates a step to run the testcases/run.zig unit test runner
     const integration_tests = b.addExecutable(.{
@@ -88,5 +94,6 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(b.getInstallStep());
     test_step.dependOn(&run_integration_tests.step);
-    test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&run_analysis_tests.step);
+    test_step.dependOn(&run_semver_tests.step);
 }
