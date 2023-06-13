@@ -143,6 +143,16 @@ pub const Version = struct {
         }
         return false;
     }
+
+    pub fn format(value: Version, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{}.{}.{}", .{ value.major, value.minor, value.patch });
+        if (value.prerelease != null) {
+            try writer.print("-{s}", .{value.prerelease.?});
+        }
+        if (value.build_metadata != null) {
+            try writer.print("+{s}", .{value.build_metadata.?});
+        }
+    }
 };
 
 test "Semantic Versionin Specification — point 2" {

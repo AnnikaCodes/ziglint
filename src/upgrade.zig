@@ -1,17 +1,21 @@
 //! Handles upgrading the ziglint binary.
 
 const std = @import("std");
+const builtin = @import("builtin");
+const semver = @import("./semver.zig");
 
 const RELEASE_API_URI = std.Uri.parse("https://api.github.com/repos/AnnikaCodes/ziglint/releases/latest") catch unreachable;
-const MAX_API_RESPONSE_SIZE = 64 * 1024; // 64 kilobyes
+const MAX_API_RESPONSE_SIZE = 64 * 1024; // 64 kilobytes
 
+const EXECUTABLE_ = std.Target.exeFileExtSimple(builtin.target.cpu.arch, builtin.target.os.tag);
 const GithubReleaseAsset = struct {
-    url: []const u8,
+    browser_download_url: []const u8,
     name: []const u8,
+    size: u32,
 
     pub fn format(value: GithubReleaseAsset, comptime fmt: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
-        try writer.print("GithubReleaseAsset{{ .name = \"{s}\", .url = \"{s}\" }}", .{value.name, value.url});
+        try writer.print("GithubReleaseAsset{{ .name = \"{s}\", .browser_download_url = \"{s}\", .size = {} }}", .{ value.name, value.browser_download_url, value.size });
     }
 };
 
@@ -43,28 +47,87 @@ const GithubRelease = struct {
     }
 };
 
-pub fn upgrade(alloc: std.mem.Allocator, override_url: ?[]const u8) !void {
+pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, override_url: ?[]const u8) !void {
     const api_url = if (override_url == null) RELEASE_API_URI else std.Uri.parse(override_url.?) catch |err| errblk: {
-        std.log.err("couldn't parse specified API URL '{s}' ({}); using the default GitHub endpoint instead", .{override_url.?, err});
+        std.log.err("couldn't parse specified API URL '{s}' ({}); using the default GitHub endpoint instead", .{ override_url.?, err });
         break :errblk RELEASE_API_URI;
     };
 
     // attempt to access the API endpoint and parse its JSON
-    var client = std.http.Client { .allocator = alloc };
+    var client = std.http.Client{ .allocator = alloc };
     defer client.deinit();
 
-    var request = try client.request(.GET, api_url, .{ .allocator = alloc }, .{});
-    defer request.deinit();
+    var api_request = try client.request(.GET, api_url, .{ .allocator = alloc }, .{});
+    defer api_request.deinit();
 
-    try request.start();
-    try request.wait();
+    try api_request.start();
+    try api_request.wait();
 
-    var request_buffer = try alloc.alloc(u8, MAX_API_RESPONSE_SIZE);
-    defer alloc.free(request_buffer);
+    var api_buffer = try alloc.alloc(u8, MAX_API_RESPONSE_SIZE);
+    defer alloc.free(api_buffer);
 
-    const raw_response = request_buffer[0..try request.readAll(request_buffer)];
+    const raw_response = api_buffer[0..try api_request.readAll(api_buffer)];
     var latest_release = try std.json.parseFromSlice(GithubRelease, alloc, raw_response, .{ .ignore_unknown_fields = true });
     defer std.json.parseFree(GithubRelease, alloc, latest_release);
     std.debug.print("raw JSON: {s}\n", .{raw_response});
     std.debug.print("parsed JSON: {}\n", .{latest_release});
+
+    var release_name = latest_release.name;
+    const latest_version = semver.Version.parse(release_name) catch errblk: {
+        // try cutting off the leading "v" if it exists
+        if (release_name[0] == 'v') {
+            release_name = release_name[1..];
+            break :errblk semver.Version.parse(release_name[1..]) catch {
+                log_failure_to_parse_version_and_exit(release_name);
+            };
+        }
+        // cut off stuff before a space
+        const space = std.mem.indexOf(u8, release_name, " ");
+        if (space != null) {
+            release_name = release_name[space.? + 1 ..];
+            break :errblk semver.Version.parse(release_name) catch log_failure_to_parse_version_and_exit(release_name);
+        }
+        std.log.err("couldn't parse latest release name '{s}' (nor '{s}') as a version", .{ latest_release.name, release_name });
+        std.process.exit(1);
+    };
+
+    if (!latest_version.has_precendence_over(current_version)) {
+        std.log.info("the current version ({}) is up to date", .{current_version});
+        return;
+    }
+
+    const extension = comptime builtin.target.exeFileExt();
+    const target = @tagName(builtin.target.os.tag) ++ "-" ++ @tagName(builtin.target.cpu.arch);
+    const executable_name = "ziglint-" ++ target ++ extension;
+
+    // find the asset with the name "ziglint-<platform>-<arch>"
+    for (latest_release.assets) |asset| {
+        if (std.mem.eql(u8, asset.name, executable_name)) {
+            std.log.info("downloading {s} version {s}", .{ asset.name, latest_version });
+
+            const uri = try std.Uri.parse(asset.browser_download_url);
+            var ziglint_request = try client.request(.GET, uri, .{ .allocator = alloc }, .{});
+            defer ziglint_request.deinit();
+
+            try ziglint_request.start();
+            try ziglint_request.wait();
+
+            var tmpdir = std.testing.tmpDir(.{});
+            defer tmpdir.cleanup();
+            // open a file in the tmpdir to write into
+            var tmpfile = try tmpdir.dir.createFile(executable_name, .{});
+            defer tmpfile.close();
+
+            // TODO: download the file, search for ziglint in the path, and move it there
+
+            return;
+        }
+    }
+    std.log.warn("version {s} of ziglint has been released (you're running version {s}), " ++
+        "but it's not currently available for your processor and operating system ({s}).", .{ latest_version, current_version, target });
+}
+
+fn log_failure_to_parse_version_and_exit(release_name: []const u8) noreturn {
+    std.log.err("couldn't parse latest release name '{s}' as a version", .{release_name});
+    std.process.exit(1);
 }

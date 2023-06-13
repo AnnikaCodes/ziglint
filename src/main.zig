@@ -5,6 +5,19 @@ const std = @import("std");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 const upgrade = @import("./upgrade.zig");
+const Version = @import("./semver.zig").Version;
+
+/////////////////////////////////////////////////////
+///              VERSION INFORMATION              ///
+///      Change me when you make an upgrade!      ///
+/////////////////////////////////////////////////////
+const ZIGLINT_VERSION = Version{
+    .major = 0,
+    .minor = 0,
+    .patch = 1,
+    .prerelease = "seriously.i.wouldnt.run.me.either",
+    .build_metadata = null, // TODO: put commit hash here?
+};
 
 const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
 
@@ -17,12 +30,29 @@ fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCod
 }
 
 const argument_definitions = (
-    \\--help                                  display this help and exit
-    \\--version                               output version information and exit
     \\--max-line-length <u32>                 set the maximum length of a line of code
-    \\--require-const-pointer-params          require all unmutated pointer parameters to functions be `const`
+    \\--require-const-pointer-params          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
     \\
 );
+const params = clap.parseParamsComptime(argument_definitions ++ "<str>...");
+
+fn show_help() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.writeAll(
+        \\ziglint: configurable static code analysis for the Zig programming language
+        \\report bugs and request features at https://github.com/AnnikaCodes/ziglint
+        \\
+        \\usage:
+        \\      to analyze code:                      ziglint [options] [files]
+        \\      to see what version is running:       ziglint version
+        \\      to upgrade to the latest version:     ziglint upgrade
+        \\      to view this help message again:      ziglint help
+        \\
+        \\options:
+        \\
+    );
+    try clap.help(stdout, clap.Help, &params, .{});
+}
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -31,54 +61,46 @@ pub fn main() anyerror!void {
         const deinit_status = gpa.deinit();
         if (deinit_status == .leak) @panic("MEMORY LEAK");
     }
-    // zig-clap doesn't support subcommands, so we handle `upgrade` ourselves
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-    if (args.len >= 2 and std.mem.eql(u8, args[1], "upgrade")) {
-        // upgrade path
-        var override_url: ?[]const u8 = null;
-        if (args.len >= 3) {
-            override_url = args[2];
-            std.log.info("overriding GitHub API URL to {s}", .{override_url.?});
-        }
-        try upgrade.upgrade(allocator, override_url);
-        return;
-    }
-
-    const params = comptime clap.parseParamsComptime(argument_definitions ++ "<str>...");
 
     var diag = clap.Diagnostic{};
     var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
         .diagnostic = &diag,
     }) catch |err| {
-        // Report useful error and exit
-        diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
+        switch (err) {
+            error.InvalidArgument => {
+                try show_help();
+                return;
+            },
+            else => {
+                // Report useful error and exit
+                std.log.err("an error occurred while parsing command-line arguments", .{});
+                diag.report(std.io.getStdErr().writer(), err) catch {};
+                return err;
+            },
+        }
     };
     defer res.deinit();
 
-    // TODO: support getting params from a .ziglintrc file
-
-    if (res.args.version != 0) {
-        const stdout = std.io.getStdOut().writer();
-        try stdout.writeAll("ziglint from Git commit " ++
-            "<TODO: add revision here>" ++
-            "\nreport bugs and request features at https://github.com/AnnikaCodes/ziglint\n");
-        return;
-    } else if (res.args.help != 0) {
-        const stdout = std.io.getStdOut().writer();
-        try stdout.writeAll(
-            \\ziglint: configurable static code analysis for the Zig programming language
-            \\
-            \\usage:
-            \\      to analyze code:                      ziglint [options] [files]
-            \\      to upgrade to the latest version:     ziglint upgrade
-            \\
-            \\options:
-            \\
-        );
-        try clap.help(stdout, clap.Help, &params, .{});
-        return;
+    // zig-clap doesn't support subcommands, so we handle `upgrade` ourselves
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+    if (args.len >= 2) {
+        if (std.mem.eql(u8, args[1], "upgrade")) {
+            // upgrade path
+            var override_url: ?[]const u8 = null;
+            if (args.len >= 3) {
+                override_url = args[2];
+                std.log.info("overriding GitHub API URL to {s}", .{override_url.?});
+            }
+            try upgrade.upgrade(allocator, ZIGLINT_VERSION, override_url);
+            return;
+        } else if (std.mem.eql(u8, args[1], "version")) {
+            const stdout = std.io.getStdOut().writer();
+            try stdout.print("{}\n", .{ZIGLINT_VERSION});
+            return;
+        } else if (std.mem.eql(u8, args[1], "help")) {
+            return show_help();
+        }
     }
 
     const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
