@@ -141,7 +141,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             defer alloc.free(our_path);
             if (builtin.target.os.tag == .linux and std.mem.endsWith(u8, our_path, " (deleted)")) {
                 std.log.warn("it looks like your ziglint binary ('{s}') was deleted while it was running;" ++
-                    "it will be reinstalled, but if you really are trying to name your ziglint (deleted) you should rename it afterwards!");
+                    "it will be reinstalled, but if you really are trying to name your ziglint (deleted) you should rename it afterwards!", .{});
             }
             const new_exe_path = try tmpdir.dir.realpathAlloc(alloc, executable_name);
             defer alloc.free(new_exe_path);
