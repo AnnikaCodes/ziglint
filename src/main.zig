@@ -157,7 +157,15 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
 // finds a ziglintrc file in the given directory or any parent directory
 // caller needs to free the result if it's there
 fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 {
-    const file = try std.fs.cwd().openFile(file_name, .{});
+    const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
+        switch (err) {
+            error.FileNotFound => {
+                std.log.err("file not found: {s}", .{file_name});
+                std.process.exit(1);
+            },
+            else => return err,
+        }
+    };
     defer file.close();
     var is_dir = (try file.stat()).kind == .directory;
     var full_path = try std.fs.realpathAlloc(alloc, file_name);
