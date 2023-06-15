@@ -70,8 +70,6 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
     const raw_response = api_buffer[0..try api_request.readAll(api_buffer)];
     var latest_release = try std.json.parseFromSlice(GithubRelease, alloc, raw_response, .{ .ignore_unknown_fields = true });
     defer std.json.parseFree(GithubRelease, alloc, latest_release);
-    std.debug.print("raw JSON: {s}\n", .{raw_response});
-    std.debug.print("parsed JSON: {}\n", .{latest_release});
 
     var release_name = latest_release.name;
     const latest_version = semver.Version.parse(release_name) catch errblk: {
@@ -104,7 +102,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
     // find the asset with the name "ziglint-<platform>-<arch>"
     for (latest_release.assets) |asset| {
         if (std.mem.eql(u8, asset.name, executable_name)) {
-            std.log.info("downloading {s} version {s}", .{ asset.name, latest_version });
+            std.log.info("downloading {s} version {s}...", .{ asset.name, latest_version });
 
             const uri = try std.Uri.parse(asset.url);
             var headers = std.http.Headers.init(alloc);
@@ -133,15 +131,58 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
 
             // reuse the API buffer to write the file to disk
             var n = try ziglint_request.readAll(api_buffer);
-            while (n > 0) : (n = try ziglint_request.readAll(api_buffer)) {
+            while (n > 0) {
                 try tmpfile.writeAll(api_buffer[0..n]);
+                n = try ziglint_request.readAll(api_buffer);
             }
+
+            // replace ourselves with a new ziglint
+            const our_path = try std.fs.selfExePathAlloc(alloc);
+            defer alloc.free(our_path);
+            if (builtin.target.os.tag == .linux and std.mem.endsWith(u8, our_path, " (deleted)")) {
+                std.log.warn("it looks like your ziglint binary ('{s}') was deleted while it was running;" ++
+                    "it will be reinstalled, but if you really are trying to name your ziglint (deleted) you should rename it afterwards!");
+            }
+            const new_exe_path = try tmpdir.dir.realpathAlloc(alloc, executable_name);
+            defer alloc.free(new_exe_path);
+            std.fs.copyFileAbsolute(new_exe_path, our_path, .{}) catch |err| {
+                // if we can move the new ziglint to /usr/local/bin (on Mac/Linux) or C:\Program Files (on Windows),
+                // we do so
+                const local_bin = if (builtin.target.os.tag == .windows) "C:\\Program Files" else "/usr/local/bin";
+                const dest_dir = try std.fs.openDirAbsolute(local_bin, .{});
+
+                std.fs.Dir.copyFile(tmpdir.dir, executable_name, dest_dir, "ziglint", .{}) catch |err2| {
+                    if (std.fs.cwd().statFile("ziglint") == error.FileNotFound) {
+                        std.fs.Dir.copyFile(tmpdir.dir, executable_name, std.fs.cwd(), "ziglint", .{}) catch |err3| {
+                            std.log.err("couldn't replace myself or copy the new ziglint to {s} or the current directory\nerrors: {}, {}, {}", .{ local_bin, err, err2, err3 });
+                            std.process.exit(1);
+                        };
+                        try make_executable(try std.fs.cwd().openFile("ziglint", .{}));
+                        std.log.warn("couldn't replace the ziglint you're running with the new version; installed ziglint to the current directory instead", .{});
+                    } else {
+                        std.log.warn("couldn't replace the ziglint you're running with the new version or install ziglint in an alternate location." ++
+                            "try deleting the ziglint file from your current directory or giving this program permissions to modify {}.", .{dest_dir});
+                    }
+                    return;
+                };
+                try make_executable(try dest_dir.openFile("ziglint", .{}));
+                std.log.warn("couldn't replace the ziglint you're running with the new version; installed ziglint to {} instead", .{dest_dir});
+                return;
+            };
+            try make_executable(try std.fs.openFileAbsolute(our_path, .{}));
+            std.log.info("successfully upgraded ziglint to version {}!", .{latest_version});
 
             return;
         }
     }
     std.log.warn("version {s} of ziglint has been released (you're running version {s}), " ++
         "but it's not currently available for your processor and operating system ({s}).", .{ latest_version, current_version, target });
+}
+
+// chmod +x
+fn make_executable(file: std.fs.File) !void {
+    const stat = try file.stat();
+    try file.chmod(stat.mode | 0o111);
 }
 
 fn log_failure_to_parse_version_and_exit(release_name: []const u8) noreturn {
