@@ -4,23 +4,11 @@ const std = @import("std");
 // declaratively construct a build graph that will be executed by an external
 // runner.
 pub fn build(b: *std.Build) !void {
-    // create GPA allocator
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) @panic("MEMORY LEAK");
-    }
-
     const build_options = b.addOptions();
     const git_result = try std.ChildProcess.exec(.{
-        .allocator = allocator,
+        .allocator = b.allocator,
         .argv = &.{ "git", "rev-parse", "--short", "HEAD" },
     });
-    defer {
-        allocator.free(git_result.stderr);
-        allocator.free(git_result.stdout);
-    }
     build_options.addOption([]const u8, "GIT_COMMIT_HASH", git_result.stdout);
 
     // Standard target options allows the person running `zig build` to choose
@@ -96,8 +84,8 @@ pub fn build(b: *std.Build) !void {
     });
     integration_tests.step.dependOn(b.getInstallStep());
     const run_integration_tests = b.addRunArtifact(integration_tests);
-    const ziglint_path = try std.fs.path.join(allocator, &.{ b.exe_dir, "ziglint" });
-    defer allocator.free(ziglint_path);
+    const ziglint_path = try std.fs.path.join(b.allocator, &.{ b.exe_dir, "ziglint" });
+
     run_integration_tests.addArgs(&.{ziglint_path});
     run_integration_tests.cwd = "testcases";
 

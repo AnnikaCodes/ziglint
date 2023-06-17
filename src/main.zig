@@ -61,10 +61,7 @@ fn show_help() !void {
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) @panic("MEMORY LEAK");
-    }
+    defer std.debug.assert(gpa.deinit() != .leak);
 
     var diag = clap.Diagnostic{};
     var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
