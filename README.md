@@ -26,6 +26,19 @@ You can enable or disable rules using either command-line options or a `ziglint.
 
 You can also tell `ziglint` to ignore individual lines of code via the comment directive `// ziglint: ignore`. If that's on a line of its own, `ziglint` will ignore the next line; if it comes at the end of a line, that line will be ignored.
 
+For example, this line of code will throw an error if [`max_line_length`](#max_line_length) is set to 50:
+```rust
+std.debug.print("I am more than 50 characters long!", .{});
+```
+But neither of these blocks will:
+```rust
+// ziglint: ignore
+std.debug.print("I am more than 50 characters long!", .{});
+```
+```rust
+std.debug.print("I am more than 50 characters long!", .{}); // ziglint: ignore
+```
+
 ## Rules
 Here's a list of all the linting rules supported by `ziglint`. Remember, this software is still a work in progress!
 ## `max_line_length`
