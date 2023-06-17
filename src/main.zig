@@ -216,6 +216,10 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
     const kind = metadata.kind();
     switch (kind) {
         .file => {
+            if (!is_top_level and !std.mem.endsWith(u8, file_name, ".zig")) {
+                // not a Zig file + not directly specified by the user
+                return;
+            }
             // lint it
             const contents = try alloc.allocSentinel(u8, metadata.size() + 1, 0);
             defer alloc.free(contents);
@@ -280,10 +284,6 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
             while (entry != null) : (entry = try iterable.next()) {
                 const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
                 defer alloc.free(full_name);
-                if (!std.mem.endsWith(u8, full_name, ".zig")) {
-                    // not a Zig file
-                    continue;
-                }
                 try lint(full_name, alloc, analyzer, false);
             }
         },
