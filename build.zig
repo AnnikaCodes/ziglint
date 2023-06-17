@@ -94,6 +94,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    integration_tests.step.dependOn(b.getInstallStep());
     const run_integration_tests = b.addRunArtifact(integration_tests);
     const ziglint_path = try std.fs.path.join(allocator, &.{ b.exe_dir, "ziglint" });
     defer allocator.free(ziglint_path);
@@ -104,7 +105,6 @@ pub fn build(b: *std.Build) !void {
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run tests");
-    test_step.dependOn(b.getInstallStep());
     test_step.dependOn(&run_integration_tests.step);
     test_step.dependOn(&run_analysis_tests.step);
     test_step.dependOn(&run_semver_tests.step);

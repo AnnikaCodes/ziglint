@@ -49,9 +49,13 @@ fn show_help() !void {
         \\      to view this help message again:      ziglint help
         \\
         \\options:
+        \\      --max-line-length <u32>
+        \\          set the maximum length of a line of code
+        \\
+        \\      --require-const-pointer-params
+        \\          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
         \\
     );
-    try clap.help(stdout, clap.Help, &params, .{});
 }
 
 pub fn main() anyerror!void {

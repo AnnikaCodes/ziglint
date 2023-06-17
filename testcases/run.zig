@@ -49,7 +49,7 @@ pub fn main() !void {
             const expected_output = test_directory.readFileAlloc(allocator, "output.txt", MAX_OUTPUT_SIZE) catch |err| {
                 switch (err) {
                     error.FileNotFound => {
-                        std.log.err("test {s} has no output.txt file — skipping...", .{name});
+                        std.log.err("test {s} has no output.txt file — skipping...", .{name});
                         continue;
                     },
                     else => {
