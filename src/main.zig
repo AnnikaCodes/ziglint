@@ -140,18 +140,18 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
                     defer alloc.free(fields_str);
 
                     std.log.err(
-                        "an unknown field was encountered in ziglintrc.json\nValid fields are: {s}",
+                        "an unknown field was encountered in ziglint.json\nValid fields are: {s}",
                         .{fields_str},
                     );
                 },
-                else => std.log.err("couldn't parse ziglintrc.json: {any}", .{err}),
+                else => std.log.err("couldn't parse ziglint.json: {any}", .{err}),
             }
             break :err_handle_blk null;
         };
         if (analyzer != null) return analyzer.?;
     }
 
-    std.log.warn("no valid ziglintrc.json found! using default configuration.", .{});
+    std.log.warn("no valid ziglint.json found! using default configuration.", .{});
     return analysis.ASTAnalyzer{};
 }
 
@@ -174,7 +174,7 @@ fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 
     var nearest_dir = if (is_dir) full_path else std.fs.path.dirname(full_path);
 
     while (nearest_dir != null) {
-        const ziglintrc = try std.fs.path.join(alloc, &[_][]const u8{ nearest_dir.?, "ziglintrc.json" });
+        const ziglintrc = try std.fs.path.join(alloc, &[_][]const u8{ nearest_dir.?, "ziglint.json" });
         const stat = std.fs.cwd().statFile(ziglintrc);
         if (stat != error.FileNotFound) {
             _ = try stat; // return error if there is one
