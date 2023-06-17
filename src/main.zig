@@ -15,8 +15,8 @@ const ZIGLINT_VERSION = Version{
     .major = 0,
     .minor = 0,
     .patch = 1,
-    .prerelease = "seriously.i.wouldnt.run.me.either",
-    .build_metadata = null, // TODO: put commit hash here?
+    .prerelease = null,
+    .build_metadata = @import("comptime_build").GIT_COMMIT_HASH,
 };
 
 const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
@@ -96,7 +96,7 @@ pub fn main() anyerror!void {
             return;
         } else if (std.mem.eql(u8, args[1], "version")) {
             const stdout = std.io.getStdOut().writer();
-            try stdout.print("{}\n", .{ZIGLINT_VERSION});
+            try stdout.print("{}", .{ZIGLINT_VERSION});
             return;
         } else if (std.mem.eql(u8, args[1], "help")) {
             return show_help();

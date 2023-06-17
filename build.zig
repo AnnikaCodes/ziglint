@@ -12,6 +12,17 @@ pub fn build(b: *std.Build) !void {
         if (deinit_status == .leak) @panic("MEMORY LEAK");
     }
 
+    const build_options = b.addOptions();
+    const git_result = try std.ChildProcess.exec(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "rev-parse", "--short", "HEAD" },
+    });
+    defer {
+        allocator.free(git_result.stderr);
+        allocator.free(git_result.stdout);
+    }
+    build_options.addOption([]const u8, "GIT_COMMIT_HASH", git_result.stdout);
+
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -31,6 +42,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    exe.addOptions("comptime_build", build_options);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
