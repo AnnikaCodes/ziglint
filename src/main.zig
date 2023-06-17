@@ -151,7 +151,7 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
         if (analyzer != null) return analyzer.?;
     }
 
-    std.log.warn("No valid ziglintrc.json found! Using default configuration.", .{});
+    std.log.warn("no valid ziglintrc.json found! using default configuration.", .{});
     return analysis.ASTAnalyzer{};
 }
 
@@ -194,12 +194,12 @@ fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 
 fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTAnalyzer, is_top_level: bool) !void {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
-            error.AccessDenied => std.log.err("ziglint: access denied: '{s}'", .{file_name}),
-            error.DeviceBusy => std.log.err("ziglint: device busy: '{s}'", .{file_name}),
-            error.FileNotFound => std.log.err("ziglint: file not found: '{s}'", .{file_name}),
-            error.FileTooBig => std.log.err("ziglint: file too big: '{s}'", .{file_name}),
+            error.AccessDenied => std.log.err("access denied: '{s}'", .{file_name}),
+            error.DeviceBusy => std.log.err("device busy: '{s}'", .{file_name}),
+            error.FileNotFound => std.log.err("file not found: '{s}'", .{file_name}),
+            error.FileTooBig => std.log.err("file too big: '{s}'", .{file_name}),
 
-            else => std.log.err("ziglint: error opening '{s}': {}", .{ file_name, err }),
+            else => std.log.err("couldn't open '{s}': {}", .{ file_name, err }),
         }
 
         // exit the program if the *user* specified an inaccessible file;
@@ -217,13 +217,12 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
     switch (kind) {
         .file => {
             // lint it
-            if (!std.mem.endsWith(u8, file_name, ".zig")) {
-                // not a Zig file
-                return;
-            }
             const contents = try alloc.allocSentinel(u8, metadata.size() + 1, 0);
             defer alloc.free(contents);
-            _ = try file.readAll(contents);
+            _ = file.readAll(contents) catch |err| {
+                std.log.err("couldn't read from '{s}': {}", .{ file_name, err });
+                return;
+            };
 
             var ast = try std.zig.Ast.parse(alloc, contents, .zig);
             defer ast.deinit(alloc);
@@ -269,10 +268,6 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
                 }
                 try stdout_writer.writeAll("\n");
             }
-
-            // if (faults.items.len == 0) {
-            //     try stdout.print("{s}{s}{s}: {s}no faults found!{s}\n", .{ bold_text, file_name, end_text_fmt, GREEN, end_text_fmt });
-            // }
         },
         .directory => {
             // iterate over it
@@ -285,12 +280,16 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
             while (entry != null) : (entry = try iterable.next()) {
                 const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
                 defer alloc.free(full_name);
+                if (!std.mem.endsWith(u8, full_name, ".zig")) {
+                    // not a Zig file
+                    continue;
+                }
                 try lint(full_name, alloc, analyzer, false);
             }
         },
         else => {
             std.log.warn(
-                "ziglint: ignoring '{s}', which is not a file or directory, but a(n) {}.",
+                "ignoring '{s}', which is not a file or directory, but a(n) {}.",
                 .{ file_name, kind },
             );
         },

@@ -50,7 +50,7 @@ pub fn main() !void {
                         continue;
                     },
                     else => {
-                        std.log.err("Unexpected error opening output.txt for test {s}: {}", .{ name, err });
+                        std.log.err("unexpected error opening output.txt for test {s}: {}", .{ name, err });
                         @panic("panicking...");
                     },
                 }
