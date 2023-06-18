@@ -7,7 +7,16 @@ Right now, there's only one functional linting rule: [`max_line_length`](#max_li
 
 # Installation
 Prebuilt `ziglint` binaries for the most common platforms are available through [GitHub Releases](https://github.com/AnnikaCodes/ziglint/releases/latest); this is the recommended way to install `ziglint`.
-Windows users should be advised that `ziglint` has not been thoroughly tested on Windows; it should work fine, but please [report any bugs](https://github.com/AnnikaCodes/ziglint/issues/new).
+You should rename the binary to `ziglint` and put it somewhere in your shell's `PATH`. For example:
+```bash
+mv ziglint-macos-x86_64 /usr/local/bin/ziglint
+chmod +x /usr/local/bin/ziglint
+```
+
+Windows users should know that `ziglint` has not been thoroughly tested on Windows; it should work fine, but please [report any bugs](https://github.com/AnnikaCodes/ziglint/issues/new).
+
+macOS users should know that `ziglint` has not been codesigned, so you may need to explicitly allow it to run in System Preferences' "Privacy & Security" section: ![image](https://github.com/AnnikaCodes/ziglint/assets/56906084/a2914cba-9356-4eaa-a3d3-37ee816a5d74)
+
 
 ## Upgrading
 `ziglint` has a built-in upgrade system.
