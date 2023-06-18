@@ -16,6 +16,7 @@ pub const SourceCodeFault = struct {
     line_number: usize,
     column_number: usize,
     fault_type: SourceCodeFaultType,
+    ast_error: ?std.zig.Ast.Error = null, // only there if fault_type == ASTError
 };
 
 pub const SourceCodeFaultTracker = struct {
@@ -58,11 +59,16 @@ pub const SourceCodeFaultType = union(enum) {
     // Pointer parameter in a function wasn't *const. Value is the name of the parameter.
     // TODO should this include type?
     PointerParamNotConst: []const u8,
+    // Error with the AST. Error is in SourceCodeFault ast_error field.
+    ASTError,
+    // The source code is not formatted according to Zig standards.
+    ImproperlyFormatted,
 };
 
 pub const ASTAnalyzer = struct {
     // 0 for no checking
     max_line_length: u32 = 120,
+    check_format: bool = true,
     enforce_const_pointers: bool = false,
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
@@ -127,12 +133,14 @@ pub const ASTAnalyzer = struct {
         }
 
         // TODO: look through AST nodes for other rule enforcements
-        var enforceConstPointers = @import("rules/enforce_const_pointers.zig").EnforceConstPointers{};
+        var enforce_const_pointers = @import("rules/enforce_const_pointers.zig").EnforceConstPointers{};
+        var check_format = @import("rules/check_format.zig").CheckFormat{};
 
         var i: u32 = 0;
         while (i < tree.nodes.len) : (i += 1) {
             // run per-node rules
-            if (self.enforce_const_pointers) try enforceConstPointers.check_node(alloc, &faults, tree, i);
+            if (self.enforce_const_pointers) try enforce_const_pointers.check_node(alloc, &faults, tree, i);
+            if (self.check_format) try check_format.check_node(alloc, &faults, tree, i);
         }
         return faults;
     }
@@ -173,7 +181,11 @@ const Tests = struct {
                 for (faults.faults.items, 0..) |fault, idx| {
                     try std.testing.expectEqual(case.expected_faults[idx].line_number, fault.line_number);
                     try std.testing.expectEqual(case.expected_faults[idx].column_number, fault.column_number);
-                    try std.testing.expectEqualDeep(case.expected_faults[idx].fault_type, fault.fault_type);
+                    // Zig is annoying about the .ASTError case but those are covered in integration rather than here
+                    // since we're not really testing our own logic anyway
+                    if (case.expected_faults[idx].fault_type != .ASTError) {
+                        try std.testing.expectEqualDeep(case.expected_faults[idx].fault_type, fault.fault_type);
+                    }
                 }
             }
         }
@@ -183,6 +195,7 @@ const Tests = struct {
         var analyzer = ASTAnalyzer{
             .max_line_length = 120,
             .enforce_const_pointers = false,
+            .check_format = false,
         };
         try run_tests(&analyzer, &.{
             TestCase{
@@ -192,6 +205,7 @@ const Tests = struct {
                         .line_number = 1,
                         .column_number = 120,
                         .fault_type = SourceCodeFaultType{ .LineTooLong = 157 },
+                        .ast_error = null,
                     },
                 },
             },
@@ -216,6 +230,7 @@ const Tests = struct {
         var analyzer = ASTAnalyzer{
             .max_line_length = 0,
             .enforce_const_pointers = true,
+            .check_format = false,
         };
 
         try run_tests(&analyzer, &.{
@@ -233,6 +248,7 @@ const Tests = struct {
                         .line_number = 1,
                         .column_number = 8,
                         .fault_type = SourceCodeFaultType{ .PointerParamNotConst = "ptr" },
+                        .ast_error = null,
                     },
                 },
             },

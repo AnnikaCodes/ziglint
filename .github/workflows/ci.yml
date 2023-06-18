@@ -28,7 +28,7 @@ jobs:
         with:
           version: master
       - name: Check code format
-        run: zig fmt --check .
+        run: zig fmt --check --exclude testcases/check_format .
       - name: Set up debugging tmate session
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
         uses: mxschmitt/action-tmate@v3
@@ -37,4 +37,4 @@ jobs:
       - name: Run tests
         run: zig build test
       - name: Executable works!
-        run: zig-out/bin/ziglint --help
+        run: zig-out/bin/ziglint help

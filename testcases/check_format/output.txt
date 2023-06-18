@@ -1,0 +1,2 @@
+./ast_error.zig:2:14: Zig's code parser detected an error: expected expression, found ';'
+./bad_format.zig:0:0: the file is improperly formatted; try using `zig fmt` to fix it

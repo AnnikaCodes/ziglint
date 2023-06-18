@@ -31,6 +31,7 @@ fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCod
 
 const argument_definitions = (
     \\--max-line-length <u32>                 set the maximum length of a line of code
+    \\--check-format                          check formatting of code (like `zig fmt --check`)
     \\--require-const-pointer-params          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
     \\
 );
@@ -114,6 +115,9 @@ pub fn main() anyerror!void {
         }
         if (@field(res.args, "require-const-pointer-params") != 0) {
             analyzer.enforce_const_pointers = false;
+        }
+        if (@field(res.args, "check-format") != 0) {
+            analyzer.check_format = true;
         }
 
         try lint(file, allocator, analyzer, true);
@@ -221,7 +225,7 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
                 return;
             }
             // lint it
-            const contents = try alloc.allocSentinel(u8, metadata.size() + 1, 0);
+            const contents = try alloc.allocSentinel(u8, metadata.size(), 0);
             defer alloc.free(contents);
             _ = file.readAll(contents) catch |err| {
                 std.log.err("couldn't read from '{s}': {}", .{ file_name, err });
@@ -269,6 +273,15 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
                             end_text_fmt,
                         },
                     ),
+                    .ImproperlyFormatted => try stdout_writer.print(
+                        "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",
+                        .{ red_text, end_text_fmt },
+                    ),
+                    .ASTError => {
+                        try stdout_writer.print("Zig's code parser detected an error: {s}", .{red_text});
+                        try ast.renderError(fault.ast_error.?, stdout_writer);
+                        try stdout_writer.print("{s}", .{end_text_fmt});
+                    },
                 }
                 try stdout_writer.writeAll("\n");
             }

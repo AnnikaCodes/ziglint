@@ -62,3 +62,18 @@ This rule restricts the possible length of a line of source code. It will create
 ```bash
 ziglint --max-line-length <maximum number of characters per line>
 ```
+
+## `check_format`
+This rule creates a linting error if the provided source code isn't formatted in the same way as Zig's autoformatter dictates. It also creates linting errors when there are AST (code parsing) errors.
+
+This rule has a similar effect to `zig fmt --check`.
+### `ziglint.json`
+```json
+{
+    "check_format": true
+}
+```
+### Command line
+```bash
+ziglint --check-format
+```

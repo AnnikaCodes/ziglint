@@ -14,6 +14,7 @@ pub const MaxLineLength = struct {
                 .line_number = line_number,
                 .column_number = self.limit,
                 .fault_type = analysis.SourceCodeFaultType{ .LineTooLong = length },
+                .ast_error = null,
             });
         }
     }
