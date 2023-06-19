@@ -15,7 +15,10 @@ chmod +x /usr/local/bin/ziglint
 
 Windows users should know that `ziglint` has not been thoroughly tested on Windows; it should work fine, but please [report any bugs](https://github.com/AnnikaCodes/ziglint/issues/new).
 
-macOS users should know that `ziglint` has not been codesigned, so you may need to explicitly allow it to run in System Preferences' "Privacy & Security" section: ![image](https://github.com/AnnikaCodes/ziglint/assets/56906084/a2914cba-9356-4eaa-a3d3-37ee816a5d74)
+macOS users should know that `ziglint` has not been codesigned, so you may need to explicitly allow it to run in System Preferences' "Privacy & Security" section: <details>
+    <summary>image showing the System Preferences button you may need to click</summary>
+    ![image](https://github.com/AnnikaCodes/ziglint/assets/56906084/a2914cba-9356-4eaa-a3d3-37ee816a5d74)
+</details>
 
 
 ## Upgrading
