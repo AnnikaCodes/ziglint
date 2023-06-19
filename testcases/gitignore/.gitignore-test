@@ -1,0 +1,10 @@
+/directly_ignored.zig
+ignored_subfolder/
+# comment
+relative_ignored.zig
+/ignored_toplevel_folder
+
+!/ignored_toplevel_folder/lintme.zig
+
+!**/lint_this_folder
+folder/**/ignored.zig

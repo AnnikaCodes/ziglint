@@ -1,0 +1,5 @@
+./folder/gets_linted.zig:4:100: line is 112 characters long; the maximum is 100
+./folder/linted/subfolder/ignored/linted.zig:4:100: line is 112 characters long; the maximum is 100
+./folder/linted/subfolder/linted.zig:4:100: line is 112 characters long; the maximum is 100
+./ignored_toplevel_folder/lintme.zig:4:100: line is 112 characters long; the maximum is 100
+./ignored_toplevel_folder/lint_this_folder/linted.zig:4:100: line is 112 characters long; the maximum is 100

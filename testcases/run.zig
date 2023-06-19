@@ -59,6 +59,9 @@ pub fn main() !void {
 
             // log to stdout
             try stdout_writer.print("Running integration test '{s}'...", .{name});
+            const is_gitignore = std.mem.eql(u8, name, "gitignore");
+            if (is_gitignore) try test_directory.rename(".gitignore-test", ".gitignore");
+
             const result = try std.ChildProcess.exec(.{
                 .allocator = allocator,
                 .argv = &.{ziglint},
@@ -67,6 +70,15 @@ pub fn main() !void {
             defer {
                 allocator.free(result.stderr);
                 allocator.free(result.stdout);
+            }
+
+            if (is_gitignore) {
+                test_directory.rename(".gitignore", ".gitignore-test") catch {
+                    std.log.err(
+                        "******** FAILED TO RENAME testcases/gitignore/.gitignore-test TO .gitignore ********",
+                        .{},
+                    );
+                };
             }
 
             std.testing.expectEqualStrings(expected_output, result.stdout) catch {

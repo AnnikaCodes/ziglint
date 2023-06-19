@@ -72,8 +72,15 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const gitignore_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/gitignore.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
     const run_analysis_tests = b.addRunArtifact(analysis_tests);
     const run_semver_tests = b.addRunArtifact(semver_tests);
+    const run_gitignore_tests = b.addRunArtifact(gitignore_tests);
 
     // Creates a step to run the testcases/run.zig unit test runner
     const integration_tests = b.addExecutable(.{
@@ -96,4 +103,5 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_integration_tests.step);
     test_step.dependOn(&run_analysis_tests.step);
     test_step.dependOn(&run_semver_tests.step);
+    test_step.dependOn(&run_gitignore_tests.step);
 }

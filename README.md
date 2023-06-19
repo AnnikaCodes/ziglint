@@ -48,6 +48,8 @@ std.debug.print("I am more than 50 characters long!", .{});
 std.debug.print("I am more than 50 characters long!", .{}); // ziglint: ignore
 ```
 
+`ziglint` will also ignore files listed in the nearest `.gitignore` file to the files/folders you're linting.
+You can disable this feature with the `--include-gitignored` command-line option.
 ## Rules
 Here's a list of all the linting rules supported by `ziglint`. Remember, this software is still a work in progress!
 ## `max_line_length`

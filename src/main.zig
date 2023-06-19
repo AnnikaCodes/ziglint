@@ -5,6 +5,7 @@ const std = @import("std");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 const upgrade = @import("./upgrade.zig");
+const IgnoreTracker = @import("./gitignore.zig").IgnoreTracker;
 const Version = @import("./semver.zig").Version;
 
 /////////////////////////////////////////////////////
@@ -33,6 +34,7 @@ const argument_definitions = (
     \\--max-line-length <u32>                 set the maximum length of a line of code
     \\--check-format                          check formatting of code (like `zig fmt --check`)
     \\--require-const-pointer-params          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
+    \\--include-gitignored                    lint files excluded by .gitignore directives
     \\
 );
 const params = clap.parseParamsComptime(argument_definitions ++ "<str>...");
@@ -52,6 +54,12 @@ fn show_help() !void {
         \\options:
         \\      --max-line-length <u32>
         \\          set the maximum length of a line of code
+        \\
+        \\      --check-format
+        \\          ensure code is syntactically correct and formatted according to Zig standards (like `zig fmt --check`)
+        \\
+        \\      --include-gitignored
+        \\          lint files excluded by .gitignore directives
         \\
         \\      --require-const-pointer-params
         \\          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
@@ -108,6 +116,26 @@ pub fn main() anyerror!void {
     const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
     for (files) |file| {
         var analyzer = try get_analyzer(file, allocator);
+        var ignore_tracker = IgnoreTracker.init(allocator, file);
+
+        defer ignore_tracker.deinit();
+        var gitignore_text: ?[]const u8 = null;
+        defer {
+            if (gitignore_text) |text| {
+                allocator.free(text);
+            }
+        }
+
+        if (@field(res.args, "include-gitignored") == 0) {
+            const gitignore_path = try find_file(allocator, file, ".gitignore");
+            if (gitignore_path != null) {
+                std.log.info("found .gitignore at {s}", .{gitignore_path.?});
+                defer allocator.free(gitignore_path.?);
+
+                gitignore_text = try std.fs.cwd().readFileAlloc(allocator, gitignore_path.?, MAX_CONFIG_BYTES);
+                try ignore_tracker.parse_gitignore(gitignore_text.?);
+            }
+        }
 
         // command-line args override ziglintrc
         if (@field(res.args, "max-line-length") != null) {
@@ -120,13 +148,13 @@ pub fn main() anyerror!void {
             analyzer.check_format = true;
         }
 
-        try lint(file, allocator, analyzer, true);
+        try lint(file, allocator, analyzer, &ignore_tracker, true);
     }
 }
 
 // Creates an ASTAnalyzer for the given file based on the nearest ziglintrc file.
 fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAnalyzer {
-    const ziglintrc_path = try find_ziglintrc(file_name, alloc);
+    const ziglintrc_path = try find_file(alloc, file_name, "ziglint.json");
     if (ziglintrc_path != null) {
         defer alloc.free(ziglintrc_path.?);
 
@@ -161,7 +189,7 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
 
 // finds a ziglintrc file in the given directory or any parent directory
 // caller needs to free the result if it's there
-fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 {
+fn find_file(alloc: std.mem.Allocator, file_name: []const u8, search_name: []const u8) !?[]const u8 {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.FileNotFound => {
@@ -178,7 +206,7 @@ fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 
     var nearest_dir = if (is_dir) full_path else std.fs.path.dirname(full_path);
 
     while (nearest_dir != null) {
-        const ziglintrc = try std.fs.path.join(alloc, &[_][]const u8{ nearest_dir.?, "ziglint.json" });
+        const ziglintrc = try std.fs.path.join(alloc, &[_][]const u8{ nearest_dir.?, search_name });
         const stat = std.fs.cwd().statFile(ziglintrc);
         if (stat != error.FileNotFound) {
             _ = try stat; // return error if there is one
@@ -195,7 +223,7 @@ fn find_ziglintrc(file_name: []const u8, alloc: std.mem.Allocator) !?[]const u8 
 // Lints a file.
 //
 // If it's a directory, recursively search it for .zig files and lint them.
-fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTAnalyzer, is_top_level: bool) !void {
+fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTAnalyzer, ignore_tracker: *const IgnoreTracker, is_top_level: bool) !void {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.AccessDenied => std.log.err("access denied: '{s}'", .{file_name}),
@@ -220,10 +248,13 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
     const kind = metadata.kind();
     switch (kind) {
         .file => {
-            if (!is_top_level and !std.mem.endsWith(u8, file_name, ".zig")) {
+            if (!is_top_level) {
                 // not a Zig file + not directly specified by the user
-                return;
+                if (!std.mem.endsWith(u8, file_name, ".zig")) return;
+                // ignored by a .gitignore
+                if (try ignore_tracker.is_ignored(file_name)) return;
             }
+
             // lint it
             const contents = try alloc.allocSentinel(u8, metadata.size(), 0);
             defer alloc.free(contents);
@@ -297,7 +328,7 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
             while (entry != null) : (entry = try iterable.next()) {
                 const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
                 defer alloc.free(full_name);
-                try lint(full_name, alloc, analyzer, false);
+                try lint(full_name, alloc, analyzer, ignore_tracker, false);
             }
         },
         else => {
