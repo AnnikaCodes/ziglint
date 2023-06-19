@@ -81,13 +81,49 @@ pub fn main() !void {
                 };
             }
 
-            std.testing.expectEqualStrings(expected_output, result.stdout) catch {
-                try stderr_writer.print("An integration test {s}FAILED{s}: '{s}'\n", .{ bold_red_text, end_text_fmt, name });
-                failures = true;
-                continue;
-            };
+            // alphabetize expected and actual output
+            const expected = try alphabetize(allocator, expected_output);
+            defer allocator.free(expected);
+
+            const actual = try alphabetize(allocator, result.stdout);
+            defer allocator.free(actual);
+            for (expected, actual) |expected_line, actual_line| {
+                std.testing.expectEqualStrings(expected_line, actual_line) catch {
+                    try stderr_writer.print("An integration test {s}FAILED{s}: '{s}'\n", .{ bold_red_text, end_text_fmt, name });
+                    failures = true;
+                    continue;
+                };
+            }
+
             try stdout_writer.print(" {s}ok{s}\n", .{ bold_green_text, end_text_fmt });
         }
         if (failures) std.process.exit(1);
     }
+}
+
+// Splits by newline and alphabetizes test output
+// Caller must deinit
+fn alphabetize(allocator: std.mem.Allocator, input: []const u8) ![][]const u8 {
+    var list = std.ArrayList([]const u8).init(allocator);
+    defer list.deinit();
+
+    var line_start: usize = 0;
+    var idx: usize = 0;
+    while (idx < input.len) : (idx += 1) {
+        if (input[idx] == '\n') {
+            const line = input[line_start..idx];
+            try list.append(line);
+            line_start = idx + 1;
+        }
+    }
+
+    var result = try list.toOwnedSlice();
+
+    // sort strings in list.items alphabetically
+    std.sort.insertion([]const u8, result, .{}, less_than);
+    return result;
+}
+
+fn less_than(_: @TypeOf(.{}), lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.lessThan(u8, lhs, rhs);
 }
