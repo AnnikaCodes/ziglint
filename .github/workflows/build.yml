@@ -24,8 +24,11 @@ jobs:
               uses: goto-bus-stop/setup-zig@v1
               with:
                 version: master
+            - name: Set compile options (release)
+              if: ${{ github.event_name == 'release' }}
+              run: echo "OPTIONS=-Dno-git-hash=true" >> "$GITHUB_ENV"
             - name: Compile
-              run: zig build -Dtarget=${{ matrix.cpu }}-${{ matrix.os }} -Doptimize=ReleaseFast
+              run: zig build -Dtarget=${{ matrix.cpu }}-${{ matrix.os }} -Doptimize=ReleaseFast ${{ env.OPTIONS }}
             - name: Set binary suffix (Windows)
               if: ${{ matrix.os == 'windows' }}
               run: echo "SUFFIX=.exe" >> "$GITHUB_ENV"

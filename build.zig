@@ -4,12 +4,19 @@ const std = @import("std");
 // declaratively construct a build graph that will be executed by an external
 // runner.
 pub fn build(b: *std.Build) !void {
+    const is_release = b.option(bool, "no-git-hash", "Omit Git commit hash (intended for release builds)") orelse false;
+
     const build_options = b.addOptions();
-    const git_result = try std.ChildProcess.exec(.{
-        .allocator = b.allocator,
-        .argv = &.{ "git", "rev-parse", "--short", "HEAD" },
-    });
-    build_options.addOption([]const u8, "GIT_COMMIT_HASH", git_result.stdout);
+    if (is_release) {
+        build_options.addOption(?[]const u8, "GIT_COMMIT_HASH", null);
+    } else {
+        const git_result = try std.ChildProcess.exec(.{
+            .allocator = b.allocator,
+            .argv = &.{ "git", "rev-parse", "--short", "HEAD" },
+        });
+        // drop the last character (newline)
+        build_options.addOption(?[]const u8, "GIT_COMMIT_HASH", git_result.stdout[0 .. git_result.stdout.len - 1]);
+    }
 
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which

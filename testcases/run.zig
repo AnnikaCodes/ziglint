@@ -119,7 +119,7 @@ fn alphabetize(allocator: std.mem.Allocator, input: []const u8) ![][]const u8 {
 
     var result = try list.toOwnedSlice();
 
-    // sort strings in list.items alphabetically
+    // sort strings in result alphabetically
     std.sort.insertion([]const u8, result, .{}, less_than);
     return result;
 }
