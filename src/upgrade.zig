@@ -82,8 +82,8 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
         }
         // cut off stuff before a space
         const space = std.mem.indexOf(u8, release_name, " ");
-        if (space != null) {
-            release_name = release_name[space.? + 1 ..];
+        if (space) |space_idx| {
+            release_name = release_name[space_idx + 1 ..];
             break :errblk semver.Version.parse(release_name) catch log_failure_to_parse_version_and_exit(release_name);
         }
         std.log.err("couldn't parse latest release name '{s}' (nor '{s}') as a version", .{ latest_release.name, release_name });

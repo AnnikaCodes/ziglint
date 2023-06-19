@@ -128,11 +128,11 @@ pub fn main() anyerror!void {
 
         if (@field(res.args, "include-gitignored") == 0) {
             const gitignore_path = try find_file(allocator, file, ".gitignore");
-            if (gitignore_path != null) {
-                std.log.info("found .gitignore at {s}", .{gitignore_path.?});
-                defer allocator.free(gitignore_path.?);
+            if (gitignore_path) |path| {
+                std.log.info("found .gitignore at {s}", .{path});
+                defer allocator.free(path);
 
-                gitignore_text = try std.fs.cwd().readFileAlloc(allocator, gitignore_path.?, MAX_CONFIG_BYTES);
+                gitignore_text = try std.fs.cwd().readFileAlloc(allocator, path, MAX_CONFIG_BYTES);
                 try ignore_tracker.parse_gitignore(gitignore_text.?);
             }
         }
@@ -155,11 +155,11 @@ pub fn main() anyerror!void {
 // Creates an ASTAnalyzer for the given file based on the nearest ziglintrc file.
 fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAnalyzer {
     const ziglintrc_path = try find_file(alloc, file_name, "ziglint.json");
-    if (ziglintrc_path != null) {
-        defer alloc.free(ziglintrc_path.?);
+    if (ziglintrc_path) |path| {
+        defer alloc.free(path);
 
-        std.log.info("using config file {s}", .{ziglintrc_path.?});
-        const config_raw = try std.fs.cwd().readFileAlloc(alloc, ziglintrc_path.?, MAX_CONFIG_BYTES);
+        std.log.info("using config file {s}", .{path});
+        const config_raw = try std.fs.cwd().readFileAlloc(alloc, path, MAX_CONFIG_BYTES);
         defer alloc.free(config_raw);
         const analyzer = std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| err_handle_blk: {
             switch (err) {

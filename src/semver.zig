@@ -73,8 +73,8 @@ pub const Version = struct {
                         }
                     }
 
-                    if (prerelease_end != null) {
-                        prerelease = raw_version[patch_end + 1 .. prerelease_end.?];
+                    if (prerelease_end) |end| {
+                        prerelease = raw_version[patch_end + 1 .. end];
                     }
 
                     patch = try std.fmt.parseInt(u32, raw_version[idx + 1 .. patch_end], 10);
@@ -146,11 +146,11 @@ pub const Version = struct {
 
     pub fn format(value: Version, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("{}.{}.{}", .{ value.major, value.minor, value.patch });
-        if (value.prerelease != null) {
-            try writer.print("-{s}", .{value.prerelease.?});
+        if (value.prerelease) |prerelease| {
+            try writer.print("-{s}", .{prerelease});
         }
-        if (value.build_metadata != null) {
-            try writer.print("+{s}", .{value.build_metadata.?});
+        if (value.build_metadata) |metadata| {
+            try writer.print("+{s}", .{metadata});
         }
     }
 };
