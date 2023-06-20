@@ -35,8 +35,8 @@ jobs:
             - name: Upload (existing release)
               if: ${{ github.event_name == 'release'}}
               run: |
-                mv zig-out/bin/ziglint${{ env.SUFFIX }} zig-out/bin/ziglint-${{ github.ref }}-${{ matrix.os }}-${{ matrix.cpu }}${{ env.SUFFIX }}
-                gh release upload ${{ github.ref }} zig-out/bin/*${{ env.SUFFIX }}
+                mv zig-out/bin/ziglint${{ env.SUFFIX }} zig-out/bin/ziglint-${{ matrix.os }}-${{ matrix.cpu }}${{ env.SUFFIX }}
+                gh release upload ${{ github.event.release.tag_name }} zig-out/bin/*${{ env.SUFFIX }}
             - name: Upload (HEAD)
               if: ${{ github.event_name == 'push' }}
               run: |
