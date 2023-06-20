@@ -13,6 +13,8 @@ mv ziglint-macos-x86_64 /usr/local/bin/ziglint
 chmod +x /usr/local/bin/ziglint
 ```
 
+If you use GitHub Actions, the [`AnnikaCodes/install-ziglint` Action](https://github.com/marketplace/actions/install-ziglint) will install `ziglint` onto your runner for you, so you can use it in your workflows without having to manually install it.
+
 Windows users should know that `ziglint` has not been thoroughly tested on Windows; it should work fine, but please [report any bugs](https://github.com/AnnikaCodes/ziglint/issues/new).
 
 macOS users should know that `ziglint` has not been codesigned, so you may need to explicitly allow it to run in System Preferences' "Privacy & Security" section: <details>
