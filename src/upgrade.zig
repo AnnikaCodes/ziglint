@@ -80,9 +80,9 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             std.process.exit(1);
         }
     };
-    defer std.json.parseFree(GithubRelease, alloc, latest_release);
+    defer latest_release.deinit();
 
-    var release_name = latest_release.name;
+    var release_name = latest_release.value.name;
     const latest_version = semver.Version.parse(release_name) catch errblk: {
         // try cutting off the leading "v" if it exists
         if (release_name[0] == 'v') {
@@ -97,7 +97,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             release_name = release_name[space_idx + 1 ..];
             break :errblk semver.Version.parse(release_name) catch log_failure_to_parse_version_and_exit(release_name);
         }
-        std.log.err("couldn't parse latest release name '{s}' (nor '{s}') as a version", .{ latest_release.name, release_name });
+        std.log.err("couldn't parse latest release name '{s}' (nor '{s}') as a version", .{ latest_release.value.name, release_name });
         std.process.exit(1);
     };
 
@@ -111,7 +111,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
     const executable_name = "ziglint-" ++ target ++ extension;
 
     // find the asset with the name "ziglint-<platform>-<arch>"
-    for (latest_release.assets) |asset| {
+    for (latest_release.value.assets) |asset| {
         if (std.mem.eql(u8, asset.name, executable_name)) {
             std.log.info("downloading {s} version {s}...", .{ asset.name, latest_version });
 
@@ -194,7 +194,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
 }
 
 // caller must free with std.json.parseFree
-fn access_api(alloc: std.mem.Allocator, api_url: std.Uri, api_buffer: []u8) !GithubRelease {
+fn access_api(alloc: std.mem.Allocator, api_url: std.Uri, api_buffer: []u8) !std.json.Parsed(GithubRelease) {
     // attempt to access the API endpoint and parse its JSON
     var client = std.http.Client{ .allocator = alloc };
     defer client.deinit();

@@ -194,7 +194,7 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
             }
             break :err_handle_blk null;
         };
-        if (analyzer != null) return analyzer.?;
+        if (analyzer != null) return analyzer.?.value;
     }
 
     std.log.warn("no valid ziglint.json found! using default configuration.", .{});
