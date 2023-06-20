@@ -16,7 +16,7 @@ const ZIGLINT_VERSION = Version{
     .major = 0,
     .minor = 0,
     .patch = 1,
-    .prerelease = "prerelease",
+    .prerelease = null,
     .build_metadata = @import("comptime_build").GIT_COMMIT_HASH,
 };
 
