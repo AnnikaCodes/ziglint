@@ -113,6 +113,20 @@ pub fn main() anyerror!void {
         }
     }
 
+    // track the files we've already seen to make sure we don't get stuck in loops
+    // or double-lint files due to symlinks.
+    var seen = std.StringHashMap(void).init(allocator);
+    defer {
+        // free all the keys, which got put here from std.fs.realpathAlloc() allocations
+        var key_iterator = seen.keyIterator();
+        while (key_iterator.next()) |key| {
+            allocator.free(key.*);
+        }
+
+        // free the hashmap
+        seen.deinit();
+    }
+
     const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
     for (files) |file| {
         var analyzer = try get_analyzer(file, allocator);
@@ -148,7 +162,7 @@ pub fn main() anyerror!void {
             analyzer.check_format = true;
         }
 
-        try lint(file, allocator, analyzer, &ignore_tracker, true);
+        try lint(file, allocator, analyzer, &ignore_tracker, &seen, true);
     }
 }
 
@@ -223,13 +237,34 @@ fn find_file(alloc: std.mem.Allocator, file_name: []const u8, search_name: []con
 // Lints a file.
 //
 // If it's a directory, recursively search it for .zig files and lint them.
-fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTAnalyzer, ignore_tracker: *const IgnoreTracker, is_top_level: bool) !void {
+fn lint(
+    file_name: []const u8,
+    alloc: std.mem.Allocator,
+    analyzer: analysis.ASTAnalyzer,
+    ignore_tracker: *const IgnoreTracker,
+    seen: *std.StringHashMap(void),
+    is_top_level: bool,
+) !void {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.AccessDenied => std.log.err("access denied: '{s}'", .{file_name}),
             error.DeviceBusy => std.log.err("device busy: '{s}'", .{file_name}),
             error.FileNotFound => std.log.err("file not found: '{s}'", .{file_name}),
             error.FileTooBig => std.log.err("file too big: '{s}'", .{file_name}),
+
+            error.SymLinkLoop => {
+                // symlink loops should be caught by our hashmap of seen files
+                // if not, we have a problem, so let's check
+                const real_path = try std.fs.realpathAlloc(alloc, file_name);
+                defer alloc.free(real_path);
+
+                if (!seen.contains(real_path)) {
+                    std.log.err(
+                        "couldn't open '{s}' due to a symlink loop, but it still hasn't been linted (full path: {s})",
+                        .{ file_name, real_path },
+                    );
+                }
+            },
 
             else => std.log.err("couldn't open '{s}': {}", .{ file_name, err }),
         }
@@ -243,6 +278,16 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
         }
     };
     defer file.close();
+
+    // we need the full, not relative, path to make sure we avoid symlink loops
+    const real_path = try std.fs.realpathAlloc(alloc, file_name);
+    if (seen.contains(real_path)) {
+        // we need to free the `real_path` memory here since we're not adding it to the hashmap
+        alloc.free(real_path);
+        return;
+    } else {
+        try seen.put(real_path, {});
+    }
 
     const metadata = try file.metadata(); // TODO: is .stat() faster?
     const kind = metadata.kind();
@@ -328,7 +373,7 @@ fn lint(file_name: []const u8, alloc: std.mem.Allocator, analyzer: analysis.ASTA
             while (entry != null) : (entry = try iterable.next()) {
                 const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
                 defer alloc.free(full_name);
-                try lint(full_name, alloc, analyzer, ignore_tracker, false);
+                try lint(full_name, alloc, analyzer, ignore_tracker, seen, false);
             }
         },
         else => {
