@@ -5,6 +5,8 @@ const builtin = @import("builtin");
 const semver = @import("./semver.zig");
 
 const RELEASE_API_URI = std.Uri.parse("https://api.github.com/repos/AnnikaCodes/ziglint/releases/latest") catch unreachable;
+// currently redirects to https://api.github.com/repos/AnnikaCodes/ziglint/releases/latest
+const FALLBACK_API_URI = std.Uri.parse("https://ziglint.worldbrightening.net/latestreleaseapi") catch unreachable;
 const MAX_API_RESPONSE_SIZE = 64 * 1024; // 64 kilobytes
 
 const EXECUTABLE_ = std.Target.exeFileExtSimple(builtin.target.cpu.arch, builtin.target.os.tag);
@@ -54,21 +56,30 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
         break :errblk RELEASE_API_URI;
     };
 
-    // attempt to access the API endpoint and parse its JSON
-    var client = std.http.Client{ .allocator = alloc };
-    defer client.deinit();
-
-    var api_request = try client.request(.GET, api_url, .{ .allocator = alloc }, .{});
-    defer api_request.deinit();
-
-    try api_request.start();
-    try api_request.wait();
-
     var api_buffer = try alloc.alloc(u8, MAX_API_RESPONSE_SIZE);
     defer alloc.free(api_buffer);
 
-    const raw_response = api_buffer[0..try api_request.readAll(api_buffer)];
-    var latest_release = try std.json.parseFromSlice(GithubRelease, alloc, raw_response, .{ .ignore_unknown_fields = true });
+    const latest_release = access_api(alloc, api_url, api_buffer) catch |err| blk: {
+        switch (err) {
+            error.MissingField => {
+                std.log.err(
+                    "couldn't parse latest release JSON: missing important field\n" ++
+                        "probably, the API URL is broken, GitHub has changed their API, or there is no latest release.\n",
+                    .{},
+                );
+            },
+            // pass it up
+            else => {},
+        }
+
+        if (override_url == null) {
+            std.log.err("couldn't access GitHub API endpoint due to {}; trying fallback endpoint", .{err});
+            break :blk try access_api(alloc, FALLBACK_API_URI, api_buffer);
+        } else {
+            std.log.err("couldn't access GitHub API endpoint due to {}", .{err});
+            std.process.exit(1);
+        }
+    };
     defer std.json.parseFree(GithubRelease, alloc, latest_release);
 
     var release_name = latest_release.name;
@@ -116,6 +127,9 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             // fn isQueryChar(c: u8) bool {
             //     return isPathChar(c) or c == '?' or c == '%'; // preescaped
             // }
+
+            var client = std.http.Client{ .allocator = alloc };
+            defer client.deinit();
 
             var ziglint_request = try client.request(.GET, uri, headers, .{});
             defer ziglint_request.deinit();
@@ -177,6 +191,22 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
     }
     std.log.warn("version {s} of ziglint has been released (you're running version {s}), " ++
         "but it's not currently available for your processor and operating system ({s}).", .{ latest_version, current_version, target });
+}
+
+// caller must free with std.json.parseFree
+fn access_api(alloc: std.mem.Allocator, api_url: std.Uri, api_buffer: []u8) !GithubRelease {
+    // attempt to access the API endpoint and parse its JSON
+    var client = std.http.Client{ .allocator = alloc };
+    defer client.deinit();
+
+    var api_request = try client.request(.GET, api_url, .{ .allocator = alloc }, .{});
+    defer api_request.deinit();
+
+    try api_request.start();
+    try api_request.wait();
+
+    const raw_response = api_buffer[0..try api_request.readAll(api_buffer)];
+    return std.json.parseFromSlice(GithubRelease, alloc, raw_response, .{ .ignore_unknown_fields = true });
 }
 
 // chmod +x
