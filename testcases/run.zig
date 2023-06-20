@@ -87,13 +87,26 @@ pub fn main() !void {
 
             const actual = try alphabetize(allocator, result.stdout);
             defer allocator.free(actual);
-            for (expected, actual) |expected_line, actual_line| {
-                std.testing.expectEqualStrings(expected_line, actual_line) catch {
+
+            var i: usize = 0;
+            while (i < expected.len and i < actual.len) : (i += 1) {
+                std.testing.expectEqualStrings(expected[i], actual[i]) catch {
                     try stderr_writer.print("An integration test {s}FAILED{s}: '{s}'\n", .{ bold_red_text, end_text_fmt, name });
                     failures = true;
                     continue;
                 };
             }
+            std.testing.expectEqual(expected.len, actual.len) catch {
+                const expected_str = try std.mem.join(allocator, "\n", expected);
+                defer allocator.free(expected_str);
+                const actual_str = try std.mem.join(allocator, "\n", actual);
+                defer allocator.free(actual_str);
+
+                try stderr_writer.print("EXPECTED:\n{s}\nGOT:\n{s}\n", .{ expected_str, actual_str });
+                try stderr_writer.print("An integration test {s}FAILED{s}: '{s}'\n", .{ bold_red_text, end_text_fmt, name });
+                failures = true;
+                continue;
+            };
 
             try stdout_writer.print(" {s}ok{s}\n", .{ bold_green_text, end_text_fmt });
         }
