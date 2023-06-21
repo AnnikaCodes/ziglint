@@ -58,7 +58,7 @@ You can disable this feature with the `--include-gitignored` command-line option
 ## Rules
 Here's a list of all the linting rules supported by `ziglint`. Remember, this software is still a work in progress!
 ## `max_line_length`
-This rule restricts the possible length of a line of source code. It will create a linting error if any line of Zig code is longer than the specified maximum.
+This rule restricts the possible length of a line of source code. It will create a linting error if any line of Zig code is longer than the specified maximum. It defaults to 100 characters.
 ### `ziglint.json`
 ```json
 {

@@ -67,7 +67,7 @@ pub const SourceCodeFaultType = union(enum) {
 
 pub const ASTAnalyzer = struct {
     // 0 for no checking
-    max_line_length: u32 = 120,
+    max_line_length: u32 = 100,
     check_format: bool = true,
     enforce_const_pointers: bool = false,
 
