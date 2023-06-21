@@ -1,6 +1,7 @@
 //! A configurable linter for Zig
 
 const std = @import("std");
+const builtin = @import("builtin");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 const upgrade = @import("./upgrade.zig");
@@ -29,10 +30,18 @@ fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCod
     return a.line_number < b.line_number;
 }
 
-var stderr = std.io.bufferedWriter(std.io.getStdErr().writer());
+// a comptime BufferedWriter is for some reason not working on Windows
+// we could pass around a writer, but for now I've been lazy and just got a writer every time
+// on Windows
+var stderr = if (builtin.target.os.tag == .windows) null else std.io.bufferedWriter(std.io.getStdErr().writer());
 pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
-    try stderr.writer().print(format ++ "\n", args);
-    try stderr.flush();
+    if (builtin.target.os.tag == .windows) {
+        var w = std.io.getStdErr().writer();
+        try w.print(format ++ "\n", args);
+    } else {
+        try stderr.writer().print(format ++ "\n", args);
+        try stderr.flush();
+    }
 }
 
 const CommandLineSwitches = struct {
