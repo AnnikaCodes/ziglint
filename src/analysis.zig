@@ -109,7 +109,7 @@ pub const ASTAnalyzer = struct {
 
             if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
                 // The line has ended - run per-line rules
-                const line = tree.source[current_line_start .. idx + 1];
+                const line = tree.source[current_line_start..idx];
                 if (self.max_line_length != 0) try max_line_length.check_line(alloc, &faults, line, current_line_number);
 
                 // check for ziglint: ignore remark
@@ -204,7 +204,7 @@ const Tests = struct {
                     SourceCodeFault{
                         .line_number = 1,
                         .column_number = 120,
-                        .fault_type = SourceCodeFaultType{ .LineTooLong = 157 },
+                        .fault_type = SourceCodeFaultType{ .LineTooLong = 156 },
                         .ast_error = null,
                     },
                 },
@@ -213,7 +213,7 @@ const Tests = struct {
                 .source =
                 \\var x = 0;
                 \\// This is a comment
-                \\       var                        jjjjj                           =                                                   10;
+                \\       var                        jjjjj                           =                                                    10;
                 ,
                 .expected_faults = &.{
                     SourceCodeFault{

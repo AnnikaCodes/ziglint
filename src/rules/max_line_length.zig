@@ -7,7 +7,7 @@ pub const MaxLineLength = struct {
     limit: u32,
 
     pub fn check_line(self: *MaxLineLength, _: std.mem.Allocator, fault_tracker: *analysis.SourceCodeFaultTracker, line: []const u8, line_number: u32) !void {
-        const length = line.len;
+        const length = try std.unicode.utf8CountCodepoints(line);
 
         if (length > self.limit) {
             try fault_tracker.add(analysis.SourceCodeFault{
