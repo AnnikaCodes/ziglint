@@ -18,8 +18,6 @@ jobs:
             GH_TOKEN: ${{ github.token }}
         steps:
             - uses: actions/checkout@v2
-              with:
-                submodules: recursive
             - name: Install nightly Zig
               uses: goto-bus-stop/setup-zig@v1
               with:

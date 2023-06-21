@@ -1,6 +1,5 @@
 //! A configurable linter for Zig
 
-const clap = @import("./lib/clap/clap.zig");
 const std = @import("std");
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
@@ -36,14 +35,12 @@ pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
     try stderr.flush();
 }
 
-const argument_definitions = (
-    \\--max-line-length <u32>                 set the maximum length of a line of code
-    \\--check-format                          check formatting of code (like `zig fmt --check`)
-    \\--require-const-pointer-params          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
-    \\--include-gitignored                    lint files excluded by .gitignore directives
-    \\
-);
-const params = clap.parseParamsComptime(argument_definitions ++ "<str>...");
+const CommandLineSwitches = struct {
+    max_line_length: ?u32 = null,
+    check_format: bool = false,
+    require_const_pointer_params: bool = false,
+    include_gitignored: bool = false,
+};
 
 fn show_help() !void {
     const stdout = std.io.getStdOut().writer();
@@ -78,28 +75,10 @@ pub fn main() anyerror!void {
     const allocator = gpa.allocator();
     defer std.debug.assert(gpa.deinit() != .leak);
 
-    var diag = clap.Diagnostic{};
-    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
-        .diagnostic = &diag,
-    }) catch |err| {
-        switch (err) {
-            error.InvalidArgument => {
-                try show_help();
-                return;
-            },
-            else => {
-                // Report useful error and exit
-                try stderr_print("an error occurred while parsing command-line arguments", .{});
-                diag.report(std.io.getStdErr().writer(), err) catch {};
-                return err;
-            },
-        }
-    };
-    defer res.deinit();
-
-    // zig-clap doesn't support subcommands, so we handle `upgrade` ourselves
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
+
+    // check for subcommads
     if (args.len >= 2) {
         if (std.mem.eql(u8, args[1], "upgrade")) {
             // upgrade path
@@ -119,6 +98,50 @@ pub fn main() anyerror!void {
         }
     }
 
+    // check for switches/arguments
+    var args_idx: usize = 1;
+    var switches = CommandLineSwitches{};
+    var cmd_line_files = std.ArrayList([]const u8).init(allocator);
+    defer cmd_line_files.deinit();
+    while (args_idx < args.len) : (args_idx += 1) {
+        const arg = args[args_idx];
+        if (arg.len > 2 and arg[0] == '-' and arg[1] == '-') { // switch
+            const switch_name = arg[2..];
+            if (std.mem.eql(u8, switch_name, "max-line-length")) {
+                args_idx += 1;
+                if (args_idx >= args.len) {
+                    try stderr_print("--max-line-length requires an argument; use `ziglint help` for more information", .{});
+                    std.process.exit(1);
+                }
+
+                const len = args[args_idx];
+                switches.max_line_length = std.fmt.parseInt(u32, len, 10) catch |err| {
+                    switch (err) {
+                        error.InvalidCharacter => {
+                            try stderr_print("invalid (non-digit) character in '--max-line-length {s}'", .{len});
+                        },
+                        error.Overflow => {
+                            try stderr_print("--max-line-length value {s} doesn't fit in a 32-bit unsigned integer", .{len});
+                        },
+                    }
+                    std.process.exit(1);
+                };
+            } else if (std.mem.eql(u8, switch_name, "check-format")) {
+                switches.check_format = true;
+            } else if (std.mem.eql(u8, switch_name, "require-const-pointer-params")) {
+                switches.require_const_pointer_params = true;
+            } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
+                switches.include_gitignored = true;
+            } else {
+                try stderr_print("unknown switch: --{s}\n", .{switch_name});
+                try show_help();
+                std.process.exit(1);
+            }
+        } else {
+            try cmd_line_files.append(arg);
+        }
+    }
+
     // track the files we've already seen to make sure we don't get stuck in loops
     // or double-lint files due to symlinks.
     var seen = std.StringHashMap(void).init(allocator);
@@ -133,7 +156,7 @@ pub fn main() anyerror!void {
         seen.deinit();
     }
 
-    const files = if (res.positionals.len > 0) res.positionals else &[_][]const u8{"."};
+    const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
     for (files) |file| {
         var analyzer = try get_analyzer(file, allocator);
         var ignore_tracker = IgnoreTracker.init(allocator, file);
@@ -146,7 +169,7 @@ pub fn main() anyerror!void {
             }
         }
 
-        if (@field(res.args, "include-gitignored") == 0) {
+        if (!switches.include_gitignored) {
             const gitignore_path = try find_file(allocator, file, ".gitignore");
             if (gitignore_path) |path| {
                 try stderr_print("found .gitignore at {s}", .{path});
@@ -157,14 +180,14 @@ pub fn main() anyerror!void {
             }
         }
 
-        // command-line args override ziglintrc
-        if (@field(res.args, "max-line-length") != null) {
-            analyzer.max_line_length = @field(res.args, "max-line-length").?;
+        // command-line args override ziglint.json
+        if (switches.max_line_length) |len| {
+            analyzer.max_line_length = len;
         }
-        if (@field(res.args, "require-const-pointer-params") != 0) {
-            analyzer.enforce_const_pointers = false;
+        if (switches.require_const_pointer_params) {
+            analyzer.enforce_const_pointers = true;
         }
-        if (@field(res.args, "check-format") != 0) {
+        if (switches.check_format) {
             analyzer.check_format = true;
         }
 
@@ -391,6 +414,5 @@ fn lint(
     }
 }
 
-// TODO: integration tests
 // TODO: more lints! (import order, cyclomatic complexity)
 // TODO: support disabling the linter for a line/region of code
