@@ -30,6 +30,12 @@ fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCod
     return a.line_number < b.line_number;
 }
 
+var stderr = std.io.bufferedWriter(std.io.getStdErr().writer());
+pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
+    try stderr.writer().print(format ++ "\n", args);
+    try stderr.flush();
+}
+
 const argument_definitions = (
     \\--max-line-length <u32>                 set the maximum length of a line of code
     \\--check-format                          check formatting of code (like `zig fmt --check`)
@@ -83,7 +89,7 @@ pub fn main() anyerror!void {
             },
             else => {
                 // Report useful error and exit
-                std.log.err("an error occurred while parsing command-line arguments", .{});
+                try stderr_print("an error occurred while parsing command-line arguments", .{});
                 diag.report(std.io.getStdErr().writer(), err) catch {};
                 return err;
             },
@@ -100,7 +106,7 @@ pub fn main() anyerror!void {
             var override_url: ?[]const u8 = null;
             if (args.len >= 3) {
                 override_url = args[2];
-                std.log.info("overriding GitHub API URL to {s}", .{override_url.?});
+                try stderr_print("overriding GitHub API URL to {s}", .{override_url.?});
             }
             try upgrade.upgrade(allocator, ZIGLINT_VERSION, override_url);
             return;
@@ -143,7 +149,7 @@ pub fn main() anyerror!void {
         if (@field(res.args, "include-gitignored") == 0) {
             const gitignore_path = try find_file(allocator, file, ".gitignore");
             if (gitignore_path) |path| {
-                std.log.info("found .gitignore at {s}", .{path});
+                try stderr_print("found .gitignore at {s}", .{path});
                 defer allocator.free(path);
 
                 gitignore_text = try std.fs.cwd().readFileAlloc(allocator, path, MAX_CONFIG_BYTES);
@@ -172,7 +178,7 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
     if (ziglintrc_path) |path| {
         defer alloc.free(path);
 
-        std.log.info("using config file {s}", .{path});
+        try stderr_print("using config file {s}", .{path});
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, path, MAX_CONFIG_BYTES);
         defer alloc.free(config_raw);
         const analyzer = std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| err_handle_blk: {
@@ -185,19 +191,19 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
                     const fields_str = try std.mem.join(alloc, ", ", &field_names);
                     defer alloc.free(fields_str);
 
-                    std.log.err(
-                        "an unknown field was encountered in ziglint.json\nValid fields are: {s}",
+                    try stderr_print(
+                        "error: an unknown field was encountered in ziglint.json\nValid fields are: {s}",
                         .{fields_str},
                     );
                 },
-                else => std.log.err("couldn't parse ziglint.json: {any}", .{err}),
+                else => try stderr_print("error: couldn't parse ziglint.json: {any}", .{err}),
             }
             break :err_handle_blk null;
         };
         if (analyzer != null) return analyzer.?.value;
     }
 
-    std.log.warn("no valid ziglint.json found! using default configuration.", .{});
+    try stderr_print("warning: no valid ziglint.json found! using default configuration.", .{});
     return analysis.ASTAnalyzer{};
 }
 
@@ -207,7 +213,7 @@ fn find_file(alloc: std.mem.Allocator, file_name: []const u8, search_name: []con
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.FileNotFound => {
-                std.log.err("file not found: {s}", .{file_name});
+                try stderr_print("error: file not found: {s}", .{file_name});
                 std.process.exit(1);
             },
             else => return err,
@@ -247,10 +253,10 @@ fn lint(
 ) !void {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
-            error.AccessDenied => std.log.err("access denied: '{s}'", .{file_name}),
-            error.DeviceBusy => std.log.err("device busy: '{s}'", .{file_name}),
-            error.FileNotFound => std.log.err("file not found: '{s}'", .{file_name}),
-            error.FileTooBig => std.log.err("file too big: '{s}'", .{file_name}),
+            error.AccessDenied => try stderr_print("error: access denied: '{s}'", .{file_name}),
+            error.DeviceBusy => try stderr_print("error: device busy: '{s}'", .{file_name}),
+            error.FileNotFound => try stderr_print("error: file not found: '{s}'", .{file_name}),
+            error.FileTooBig => try stderr_print("error: file too big: '{s}'", .{file_name}),
 
             error.SymLinkLoop => {
                 // symlink loops should be caught by our hashmap of seen files
@@ -259,14 +265,14 @@ fn lint(
                 defer alloc.free(real_path);
 
                 if (!seen.contains(real_path)) {
-                    std.log.err(
-                        "couldn't open '{s}' due to a symlink loop, but it still hasn't been linted (full path: {s})",
+                    try stderr_print(
+                        "error: couldn't open '{s}' due to a symlink loop, but it still hasn't been linted (full path: {s})",
                         .{ file_name, real_path },
                     );
                 }
             },
 
-            else => std.log.err("couldn't open '{s}': {}", .{ file_name, err }),
+            else => try stderr_print("error: couldn't open '{s}': {}", .{ file_name, err }),
         }
 
         // exit the program if the *user* specified an inaccessible file;
@@ -304,7 +310,7 @@ fn lint(
             const contents = try alloc.allocSentinel(u8, metadata.size(), 0);
             defer alloc.free(contents);
             _ = file.readAll(contents) catch |err| {
-                std.log.err("couldn't read from '{s}': {}", .{ file_name, err });
+                try stderr_print("error: couldn't read '{s}': {}", .{ file_name, err });
                 return;
             };
 
@@ -377,7 +383,7 @@ fn lint(
             }
         },
         else => {
-            std.log.warn(
+            try stderr_print(
                 "ignoring '{s}', which is not a file or directory, but a(n) {}.",
                 .{ file_name, kind },
             );

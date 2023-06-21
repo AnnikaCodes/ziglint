@@ -3,6 +3,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const semver = @import("./semver.zig");
+const stderr_print = @import("./main.zig").stderr_print;
 
 const RELEASE_API_URI = std.Uri.parse("https://api.github.com/repos/AnnikaCodes/ziglint/releases/latest") catch unreachable;
 // currently redirects to https://api.github.com/repos/AnnikaCodes/ziglint/releases/latest
@@ -52,7 +53,7 @@ const GithubRelease = struct {
 
 pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, override_url: ?[]const u8) !void {
     const api_url = if (override_url == null) RELEASE_API_URI else std.Uri.parse(override_url.?) catch |err| errblk: {
-        std.log.err("couldn't parse specified API URL '{s}' ({}); using the default GitHub endpoint instead", .{ override_url.?, err });
+        try stderr_print("couldn't parse specified API URL '{s}' ({}); using the default GitHub endpoint instead", .{ override_url.?, err });
         break :errblk RELEASE_API_URI;
     };
 
@@ -62,8 +63,8 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
     const latest_release = access_api(alloc, api_url, api_buffer) catch |err| blk: {
         switch (err) {
             error.MissingField => {
-                std.log.err(
-                    "couldn't parse latest release JSON: missing important field\n" ++
+                try stderr_print(
+                    "error: couldn't parse latest release JSON: missing important field\n" ++
                         "probably, the API URL is broken, GitHub has changed their API, or there is no latest release.\n",
                     .{},
                 );
@@ -73,10 +74,10 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
         }
 
         if (override_url == null) {
-            std.log.err("couldn't access GitHub API endpoint due to {}; trying fallback endpoint", .{err});
+            try stderr_print("error: couldn't access GitHub API endpoint due to {}; trying fallback endpoint", .{err});
             break :blk try access_api(alloc, FALLBACK_API_URI, api_buffer);
         } else {
-            std.log.err("couldn't access GitHub API endpoint due to {}", .{err});
+            try stderr_print("error: couldn't access GitHub API endpoint due to {}", .{err});
             std.process.exit(1);
         }
     };
@@ -97,12 +98,12 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             release_name = release_name[space_idx + 1 ..];
             break :errblk semver.Version.parse(release_name) catch log_failure_to_parse_version_and_exit(release_name);
         }
-        std.log.err("couldn't parse latest release name '{s}' (nor '{s}') as a version", .{ latest_release.value.name, release_name });
+        try stderr_print("error: couldn't parse latest release name '{s}' (nor '{s}') as a version", .{ latest_release.value.name, release_name });
         std.process.exit(1);
     };
 
     if (!latest_version.has_precendence_over(current_version)) {
-        std.log.info("the current version ({}) is up to date", .{current_version});
+        try stderr_print("the current version ({}) is up to date", .{current_version});
         return;
     }
 
@@ -113,7 +114,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
     // find the asset with the name "ziglint-<platform>-<arch>"
     for (latest_release.value.assets) |asset| {
         if (std.mem.eql(u8, asset.name, executable_name)) {
-            std.log.info("downloading {s} version {s}...", .{ asset.name, latest_version });
+            try stderr_print("downloading {s} version {s}...", .{ asset.name, latest_version });
 
             const uri = try std.Uri.parse(asset.url);
             var headers = std.http.Headers.init(alloc);
@@ -154,7 +155,7 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             const our_path = try std.fs.selfExePathAlloc(alloc);
             defer alloc.free(our_path);
             if (builtin.target.os.tag == .linux and std.mem.endsWith(u8, our_path, " (deleted)")) {
-                std.log.warn("it looks like your ziglint binary ('{s}') was deleted while it was running;" ++
+                try stderr_print("it looks like your ziglint binary ('{s}') was deleted while it was running;" ++
                     "it will be reinstalled, but if you really are trying to name your ziglint (deleted) you should rename it afterwards!", .{our_path});
             }
             const new_exe_path = try tmpdir.dir.realpathAlloc(alloc, executable_name);
@@ -168,28 +169,28 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
                 std.fs.Dir.copyFile(tmpdir.dir, executable_name, dest_dir, "ziglint", .{}) catch |err2| {
                     if (std.fs.cwd().statFile("ziglint") == error.FileNotFound) {
                         std.fs.Dir.copyFile(tmpdir.dir, executable_name, std.fs.cwd(), "ziglint", .{}) catch |err3| {
-                            std.log.err("couldn't replace myself or copy the new ziglint to {s} or the current directory\nerrors: {}, {}, {}", .{ local_bin, err, err2, err3 });
+                            try stderr_print("error: couldn't replace myself or copy the new ziglint to {s} or the current directory\nerrors: {}, {}, {}", .{ local_bin, err, err2, err3 });
                             std.process.exit(1);
                         };
                         try make_executable(try std.fs.cwd().openFile("ziglint", .{}));
-                        std.log.warn("couldn't replace the ziglint you're running with the new version; installed ziglint to the current directory instead", .{});
+                        try stderr_print("couldn't replace the ziglint you're running with the new version; installed ziglint to the current directory instead", .{});
                     } else {
-                        std.log.warn("couldn't replace the ziglint you're running with the new version or install ziglint in an alternate location." ++
+                        try stderr_print("couldn't replace the ziglint you're running with the new version or install ziglint in an alternate location." ++
                             "try deleting the ziglint file from your current directory or giving this program permissions to modify {}.", .{dest_dir});
                     }
                     return;
                 };
                 try make_executable(try dest_dir.openFile("ziglint", .{}));
-                std.log.warn("couldn't replace the ziglint you're running with the new version; installed ziglint to {} instead", .{dest_dir});
+                try stderr_print("couldn't replace the ziglint you're running with the new version; installed ziglint to {} instead", .{dest_dir});
                 return;
             };
             try make_executable(try std.fs.openFileAbsolute(our_path, .{}));
-            std.log.info("successfully upgraded ziglint to version {}!", .{latest_version});
+            try stderr_print("successfully upgraded ziglint to version {}!", .{latest_version});
 
             return;
         }
     }
-    std.log.warn("version {s} of ziglint has been released (you're running version {s}), " ++
+    try stderr_print("version {s} of ziglint has been released (you're running version {s}), " ++
         "but it's not currently available for your processor and operating system ({s}).", .{ latest_version, current_version, target });
 }
 
@@ -218,6 +219,6 @@ fn make_executable(file: std.fs.File) !void {
 }
 
 fn log_failure_to_parse_version_and_exit(release_name: []const u8) noreturn {
-    std.log.err("couldn't parse latest release name '{s}' as a version", .{release_name});
+    stderr_print("error: couldn't parse latest release name '{s}' as a version", .{release_name}) catch unreachable;
     std.process.exit(1);
 }
