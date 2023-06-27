@@ -57,18 +57,6 @@ std.debug.print("I am more than 50 characters long!", .{}); // ziglint: ignore
 You can disable this feature with the `--include-gitignored` command-line option.
 ## Rules
 Here's a list of all the linting rules supported by `ziglint`. Remember, this software is still a work in progress!
-## `max_line_length`
-This rule restricts the possible length of a line of source code. It will create a linting error if any line of Zig code is longer than the specified maximum. It defaults to 100 characters.
-### `ziglint.json`
-```json
-{
-    "max_line_length": <maximum number of characters per line>
-}
-```
-### Command line
-```bash
-ziglint --max-line-length <maximum number of characters per line>
-```
 
 ## `check_format`
 This rule creates a linting error if the provided source code isn't formatted in the same way as Zig's autoformatter dictates. It also creates linting errors when there are AST (code parsing) errors.
@@ -83,4 +71,39 @@ This rule has a similar effect to `zig fmt --check`.
 ### Command line
 ```bash
 ziglint --check-format
+```
+
+## `exclude`
+This rule excludes files from being linted (unless they are specified on the command line directly). Currently, it's only available in `ziglint.json`.
+
+It accepts Gitignore-style globs to specify paths.
+### `ziglint.json`
+```json
+{
+    "exclude": <array of files to exclude>
+}
+```
+
+## `include`
+This rule negates exclusions. If the `include`d files aren't in the paths/working directory `ziglint` is searching in, they still won't be linted, but if they were listed in an `exclude` rule then they will be. Currently, this rule is only available in `ziglint.json`.
+
+Like `exclude`, it accepts Gitignore-style globs to match paths.
+### `ziglint.json`
+```json
+{
+    "include": <array of files to include>
+}
+```
+
+## `max_line_length`
+This rule restricts the possible length of a line of source code. It will create a linting error if any line of Zig code is longer than the specified maximum. It defaults to 100 characters.
+### `ziglint.json`
+```json
+{
+    "max_line_length": <maximum number of characters per line>
+}
+```
+### Command line
+```bash
+ziglint --max-line-length <maximum number of characters per line>
 ```
