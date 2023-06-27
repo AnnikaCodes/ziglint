@@ -95,6 +95,11 @@ pub fn main() anyerror!void {
     const allocator = gpa.allocator();
     defer std.debug.assert(gpa.deinit() != .leak);
 
+    // use an ArenaAllocator for everything that's not per-file
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -107,7 +112,7 @@ pub fn main() anyerror!void {
                 override_url = args[2];
                 try stderr_print("overriding GitHub API URL to {s}", .{override_url.?});
             }
-            try upgrade.upgrade(allocator, ZIGLINT_VERSION, override_url);
+            try upgrade.upgrade(arena_allocator, ZIGLINT_VERSION, override_url);
             return;
         } else if (std.mem.eql(u8, args[1], "version")) {
             const stdout = std.io.getStdOut().writer();
@@ -121,8 +126,9 @@ pub fn main() anyerror!void {
     // check for switches/arguments
     var args_idx: usize = 1;
     var switches = Configuration{};
-    var cmd_line_files = std.ArrayList([]const u8).init(allocator);
+    var cmd_line_files = std.ArrayList([]const u8).init(arena_allocator);
     defer cmd_line_files.deinit();
+
     while (args_idx < args.len) : (args_idx += 1) {
         const arg = args[args_idx];
         if (arg.len > 2 and arg[0] == '-' and arg[1] == '-') { // switch
@@ -164,29 +170,23 @@ pub fn main() anyerror!void {
 
     // track the files we've already seen to make sure we don't get stuck in loops
     // or double-lint files due to symlinks.
-    var seen = std.StringHashMap(void).init(allocator);
+    var seen = std.StringHashMap(void).init(arena_allocator);
     defer {
-        // free all the keys, which got put here from std.fs.realpathAlloc() allocations
+        // free all the keys, which got put here from std.fs.realpathAlloc() allocations with the non-arena (per-file) allocator
         var key_iterator = seen.keyIterator();
         while (key_iterator.next()) |key| {
             allocator.free(key.*);
         }
 
-        // free the hashmap
+        // no need to free the hashmap itself as it's arena-allocated
         seen.deinit();
     }
 
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
     for (files) |file| {
-        var config_file_parsed = try get_config(file, allocator);
+        var config_file_parsed = try get_config(file, arena_allocator);
         var config = switches;
-        defer {
-            if (config_file_parsed) |c| {
-                if (c.value.exclude) |x| allocator.free(x);
-                if (c.value.include) |x| allocator.free(x);
-                c.deinit();
-            }
-        }
+
         if (config_file_parsed) |c| {
             config = c.value;
             config.merge(&switches);
@@ -197,24 +197,20 @@ pub fn main() anyerror!void {
             if (@field(config, field.name)) |value| @field(analyzer, field.name) = value;
         }
 
-        var ignore_tracker = IgnoreTracker.init(allocator, file);
+        var ignore_tracker = IgnoreTracker.init(arena_allocator, file);
         defer ignore_tracker.deinit();
 
         if (config.exclude) |exclus| try ignore_tracker.add_slice_to_excludes(exclus);
         if (config.include) |inclus| try ignore_tracker.add_slice_to_includes(inclus);
 
         var gitignore_text: ?[]const u8 = null;
-        defer {
-            if (gitignore_text) |text| allocator.free(text);
-        }
 
         if (config.include_gitignored != false) {
-            const gitignore_path = try find_file(allocator, file, ".gitignore");
+            const gitignore_path = try find_file(arena_allocator, file, ".gitignore");
             if (gitignore_path) |path| {
                 try stderr_print("found .gitignore at {s}", .{path});
-                defer allocator.free(path);
 
-                gitignore_text = try std.fs.cwd().readFileAlloc(allocator, path, MAX_CONFIG_BYTES);
+                gitignore_text = try std.fs.cwd().readFileAlloc(arena_allocator, path, MAX_CONFIG_BYTES);
                 try ignore_tracker.parse_gitignore(gitignore_text.?);
             }
         }
