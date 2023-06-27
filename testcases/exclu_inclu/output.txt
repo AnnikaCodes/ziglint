@@ -1,0 +1,1 @@
+./linted.zig:4:100: line is 111 characters long; the maximum is 100

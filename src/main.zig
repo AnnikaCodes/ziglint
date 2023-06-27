@@ -44,11 +44,22 @@ pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
     }
 }
 
-const CommandLineSwitches = struct {
+const Configuration = struct {
     max_line_length: ?u32 = null,
-    check_format: bool = false,
-    require_const_pointer_params: bool = false,
-    include_gitignored: bool = false,
+    check_format: ?bool = null,
+    enforce_const_pointers: ?bool = null,
+    include_gitignored: ?bool = null,
+    exclude: ?[][]const u8 = null,
+    include: ?[][]const u8 = null,
+
+    /// Replaces our fields with its fields if the field is not null in other
+    pub fn merge(self: *Configuration, other: *const Configuration) void {
+        inline for (std.meta.fields(Configuration)) |field| {
+            if (@field(other, field.name)) |value| {
+                @field(self, field.name) = value;
+            }
+        }
+    }
 };
 
 fn show_help() !void {
@@ -109,7 +120,7 @@ pub fn main() anyerror!void {
 
     // check for switches/arguments
     var args_idx: usize = 1;
-    var switches = CommandLineSwitches{};
+    var switches = Configuration{};
     var cmd_line_files = std.ArrayList([]const u8).init(allocator);
     defer cmd_line_files.deinit();
     while (args_idx < args.len) : (args_idx += 1) {
@@ -138,7 +149,7 @@ pub fn main() anyerror!void {
             } else if (std.mem.eql(u8, switch_name, "check-format")) {
                 switches.check_format = true;
             } else if (std.mem.eql(u8, switch_name, "require-const-pointer-params")) {
-                switches.require_const_pointer_params = true;
+                switches.enforce_const_pointers = false;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
             } else {
@@ -167,18 +178,37 @@ pub fn main() anyerror!void {
 
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
     for (files) |file| {
-        var analyzer = try get_analyzer(file, allocator);
-        var ignore_tracker = IgnoreTracker.init(allocator, file);
-
-        defer ignore_tracker.deinit();
-        var gitignore_text: ?[]const u8 = null;
+        var config_file_parsed = try get_config(file, allocator);
+        var config = switches;
         defer {
-            if (gitignore_text) |text| {
-                allocator.free(text);
+            if (config_file_parsed) |c| {
+                if (c.value.exclude) |x| allocator.free(x);
+                if (c.value.include) |x| allocator.free(x);
+                c.deinit();
             }
         }
+        if (config_file_parsed) |c| {
+            config = c.value;
+            config.merge(&switches);
+        }
 
-        if (!switches.include_gitignored) {
+        var analyzer = analysis.ASTAnalyzer{};
+        inline for (std.meta.fields(analysis.ASTAnalyzer)) |field| {
+            if (@field(config, field.name)) |value| @field(analyzer, field.name) = value;
+        }
+
+        var ignore_tracker = IgnoreTracker.init(allocator, file);
+        defer ignore_tracker.deinit();
+
+        if (config.exclude) |exclus| try ignore_tracker.add_slice_to_excludes(exclus);
+        if (config.include) |inclus| try ignore_tracker.add_slice_to_includes(inclus);
+
+        var gitignore_text: ?[]const u8 = null;
+        defer {
+            if (gitignore_text) |text| allocator.free(text);
+        }
+
+        if (config.include_gitignored != false) {
             const gitignore_path = try find_file(allocator, file, ".gitignore");
             if (gitignore_path) |path| {
                 try stderr_print("found .gitignore at {s}", .{path});
@@ -189,31 +219,19 @@ pub fn main() anyerror!void {
             }
         }
 
-        // command-line args override ziglint.json
-        if (switches.max_line_length) |len| {
-            analyzer.max_line_length = len;
-        }
-        if (switches.require_const_pointer_params) {
-            analyzer.enforce_const_pointers = true;
-        }
-        if (switches.check_format) {
-            analyzer.check_format = true;
-        }
-
         try lint(file, allocator, analyzer, &ignore_tracker, &seen, true);
     }
 }
 
-// Creates an ASTAnalyzer for the given file based on the nearest ziglintrc file.
-fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAnalyzer {
+// Creates a Configuration object for the given file based on the nearest ziglintrc file.
+fn get_config(file_name: []const u8, alloc: std.mem.Allocator) !?std.json.Parsed(Configuration) {
     const ziglintrc_path = try find_file(alloc, file_name, "ziglint.json");
     if (ziglintrc_path) |path| {
         defer alloc.free(path);
 
         try stderr_print("using config file {s}", .{path});
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, path, MAX_CONFIG_BYTES);
-        defer alloc.free(config_raw);
-        const analyzer = std.json.parseFromSlice(analysis.ASTAnalyzer, alloc, config_raw, .{}) catch |err| err_handle_blk: {
+        const cfg = std.json.parseFromSlice(Configuration, alloc, config_raw, .{}) catch |err| err_handle_blk: {
             switch (err) {
                 error.UnknownField => {
                     var field_names: [fields.len][]const u8 = undefined;
@@ -232,11 +250,11 @@ fn get_analyzer(file_name: []const u8, alloc: std.mem.Allocator) !analysis.ASTAn
             }
             break :err_handle_blk null;
         };
-        if (analyzer != null) return analyzer.?.value;
+        if (cfg != null) return cfg;
     }
 
     try stderr_print("warning: no valid ziglint.json found! using default configuration.", .{});
-    return analysis.ASTAnalyzer{};
+    return null;
 }
 
 // finds a ziglintrc file in the given directory or any parent directory

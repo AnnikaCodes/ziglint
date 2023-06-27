@@ -47,6 +47,14 @@ pub const IgnoreTracker = struct {
         }
     }
 
+    pub fn add_slice_to_includes(self: *IgnoreTracker, slice: [][]const u8) !void {
+        try self.includes.appendSlice(slice);
+    }
+
+    pub fn add_slice_to_excludes(self: *IgnoreTracker, slice: [][]const u8) !void {
+        try self.excludes.appendSlice(slice);
+    }
+
     pub fn is_ignored(self: *const IgnoreTracker, path: []const u8) !bool {
         const relative_path = try std.fs.path.relative(self.allocator, self.base_path, path);
         defer self.allocator.free(relative_path);
