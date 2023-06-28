@@ -208,7 +208,7 @@ pub fn main() anyerror!void {
         if (config.include_gitignored != false) {
             const gitignore_path = try find_file(arena_allocator, file, ".gitignore");
             if (gitignore_path) |path| {
-                try stderr_print("found .gitignore at {s}", .{path});
+                try stderr_print("using Gitignore {s}", .{path});
 
                 gitignore_text = try std.fs.cwd().readFileAlloc(arena_allocator, path, MAX_CONFIG_BYTES);
                 try ignore_tracker.parse_gitignore(gitignore_text.?);
