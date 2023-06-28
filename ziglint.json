@@ -1,0 +1,5 @@
+{
+    "max_line_length": 120,
+    "check_format": true,
+    "exclude": ["/testcases/"]
+}

@@ -1,5 +1,5 @@
 ### 0.0.2
-- New [`exclude`](https://github.com/AnnikaCodes/ziglint#exclude) and [`include`](https://github.com/AnnikaCodes/ziglint#include) have been implemented!
+- New [`exclude`](https://github.com/AnnikaCodes/ziglint#exclude) and [`include`](https://github.com/AnnikaCodes/ziglint#include) rules have been implemented!
 - [`max_line_length`](https://github.com/AnnikaCodes/ziglint#max_line_length) now defaults to a maximum of 100 characters per line.
 - Command-line argument parsing was rewritten.
 - Zig's `std.log` is no longer used for logging, fixing issues where information about upgrades wouldn't be printed properly.

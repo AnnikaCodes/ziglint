@@ -110,10 +110,11 @@ pub const ASTAnalyzer = struct {
             if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
                 // The line has ended - run per-line rules
                 const line = tree.source[current_line_start..idx];
-                if (self.max_line_length != 0) try max_line_length.check_line(alloc, &faults, line, current_line_number);
+                if (self.max_line_length != 0) {
+                    try max_line_length.check_line(alloc, &faults, line, current_line_number);
+                }
 
                 // check for ziglint: ignore remark
-                // if (idx > "ziglint: ignore".len) std.debug.print("is_comment: {}, line: {}, treebit: '{s}'\n", .{is_comment, current_line_number, tree.source[(idx - "ziglint: ignore".len )..idx]});
                 if (is_comment and
                     idx > "ziglint: ignore\n".len and
                     std.mem.eql(u8, tree.source[(idx - "ziglint: ignore".len)..idx], "ziglint: ignore"))
@@ -199,6 +200,7 @@ const Tests = struct {
         };
         try run_tests(&analyzer, &.{
             TestCase{
+                // ziglint: ignore
                 .source = "std.debug.print(skerjghrekgkrejhgkjerhgkjhrjkhgjksrhgjkrshjgkhsrjkghksjfhgkjhskjghkjfddadwhjkwjfkwjfkewjfkjwkfwkgsfkjfwjfhweewtjewtwehjtwwrewghdfkhgsjkjkds);",
                 .expected_faults = &.{
                     SourceCodeFault{
@@ -213,6 +215,7 @@ const Tests = struct {
                 .source =
                 \\var x = 0;
                 \\// This is a comment
+                // ziglint: ignore
                 \\       var                        jjjjj                           =                                                    10;
                 ,
                 .expected_faults = &.{

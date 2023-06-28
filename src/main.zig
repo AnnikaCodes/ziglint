@@ -79,7 +79,8 @@ fn show_help() !void {
         \\          set the maximum length of a line of code
         \\
         \\      --check-format
-        \\          ensure code is syntactically correct and formatted according to Zig standards (like `zig fmt --check`)
+        \\          ensure code is syntactically correct and formatted according to Zig standards
+        \\          (this is similar to what `zig fmt --check` does)
         \\
         \\      --include-gitignored
         \\          lint files excluded by .gitignore directives
@@ -136,7 +137,10 @@ pub fn main() anyerror!void {
             if (std.mem.eql(u8, switch_name, "max-line-length")) {
                 args_idx += 1;
                 if (args_idx >= args.len) {
-                    try stderr_print("--max-line-length requires an argument; use `ziglint help` for more information", .{});
+                    try stderr_print(
+                        "--max-line-length requires an argument; use `ziglint help` for more information",
+                        .{},
+                    );
                     std.process.exit(1);
                 }
 
@@ -147,7 +151,10 @@ pub fn main() anyerror!void {
                             try stderr_print("invalid (non-digit) character in '--max-line-length {s}'", .{len});
                         },
                         error.Overflow => {
-                            try stderr_print("--max-line-length value {s} doesn't fit in a 32-bit unsigned integer", .{len});
+                            try stderr_print(
+                                "--max-line-length value {s} doesn't fit in a 32-bit unsigned integer",
+                                .{len},
+                            );
                         },
                     }
                     std.process.exit(1);
@@ -172,7 +179,8 @@ pub fn main() anyerror!void {
     // or double-lint files due to symlinks.
     var seen = std.StringHashMap(void).init(arena_allocator);
     defer {
-        // free all the keys, which got put here from std.fs.realpathAlloc() allocations with the non-arena (per-file) allocator
+        // free all the keys, which got put here from std.fs.realpathAlloc() allocations
+        // with the non-arena (per-file) allocator
         var key_iterator = seen.keyIterator();
         while (key_iterator.next()) |key| {
             allocator.free(key.*);
@@ -312,7 +320,8 @@ fn lint(
 
                 if (!seen.contains(real_path)) {
                     try stderr_print(
-                        "error: couldn't open '{s}' due to a symlink loop, but it still hasn't been linted (full path: {s})",
+                        "error: couldn't open '{s}' due to a symlink loop, " ++
+                            "but it still hasn't been linted (full path: {s})",
                         .{ file_name, real_path },
                     );
                 }

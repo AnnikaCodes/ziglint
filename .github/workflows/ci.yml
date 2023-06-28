@@ -25,8 +25,10 @@ jobs:
         uses: goto-bus-stop/setup-zig@v1
         with:
           version: master
-      - name: Check code format
-        run: zig fmt --check --exclude testcases/check_format .
+      - name: Install ziglint
+        uses: AnnikaCodes/install-ziglint@v0.1
+      - name: Lint code
+        run: ziglint .
       - name: Set up debugging tmate session
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
         uses: mxschmitt/action-tmate@v3

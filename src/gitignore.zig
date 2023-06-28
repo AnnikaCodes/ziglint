@@ -93,7 +93,8 @@ fn matches(path: []const u8, pattern_input: []const u8) bool {
 
     var at_start = true;
     while (current_pattern_part != null) {
-        if (current_path_part == null) return false; // if we run out of path parts before a pattern ends, it's not a match
+        // if we run out of path parts before a pattern ends, it's not a match
+        if (current_path_part == null) return false;
 
         if (std.mem.eql(u8, current_pattern_part.?, "**")) {
             // match until next part
@@ -117,7 +118,7 @@ fn matches(path: []const u8, pattern_input: []const u8) bool {
             // we can move along the path until we find something that matches the pattern
             while (!match) {
                 current_path_part = path_parts.next();
-                if (current_path_part == null) return false; // if we run out of path parts before a match, it's not a match
+                if (current_path_part == null) return false;
                 match = part_matches(current_path_part.?, current_pattern_part.?);
             }
             at_start = false;
@@ -136,7 +137,8 @@ fn part_matches(path_part: []const u8, pattern_part: []const u8) bool {
     var path_idx: usize = 0;
     var pattern_idx: usize = 0;
     while (pattern_idx < pattern_part.len) {
-        if (path_idx >= path_part.len) return false; // if we run out of path parts before a pattern ends, it's not a match
+        // if we run out of path parts before a pattern ends, it's not a match
+        if (path_idx >= path_part.len) return false;
 
         switch (pattern_part[pattern_idx]) {
             '*' => {
@@ -147,7 +149,9 @@ fn part_matches(path_part: []const u8, pattern_part: []const u8) bool {
                 }
 
                 // match as many characters as possible
-                if (pattern_idx + 1 == pattern_part.len) return true; // if the * is the last character, it matches everything
+
+                // if the * is the last character, it matches everything
+                if (pattern_idx + 1 == pattern_part.len) return true;
                 // otherwise, we need to match up to the next character
                 var next_char = pattern_part[pattern_idx + 1];
                 while (path_part[path_idx] != next_char) {

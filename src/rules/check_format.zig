@@ -8,7 +8,13 @@ const analysis = @import("../analysis.zig");
 pub const CheckFormat = struct {
     ast_is_checked: bool = false,
 
-    pub fn check_node(self: *CheckFormat, alloc: std.mem.Allocator, fault_tracker: *analysis.SourceCodeFaultTracker, tree: std.zig.Ast, _: u32) !void {
+    pub fn check_node(
+        self: *CheckFormat,
+        alloc: std.mem.Allocator,
+        fault_tracker: *analysis.SourceCodeFaultTracker,
+        tree: std.zig.Ast,
+        _: u32,
+    ) !void {
         if (self.ast_is_checked) return;
 
         // error-free tree!
@@ -17,7 +23,11 @@ pub const CheckFormat = struct {
             defer alloc.free(formatted);
 
             if (!std.mem.eql(u8, tree.source, formatted)) {
-                try fault_tracker.add(analysis.SourceCodeFault{ .line_number = 0, .column_number = 0, .fault_type = .ImproperlyFormatted });
+                try fault_tracker.add(analysis.SourceCodeFault{
+                    .line_number = 0,
+                    .column_number = 0,
+                    .fault_type = .ImproperlyFormatted,
+                });
             }
         } else {
             // AST errors to report!

@@ -6,7 +6,13 @@ const std = @import("std");
 pub const EnforceConstPointers = struct {
     last_enforced_fn_node_idx: u32 = 0,
 
-    pub fn check_node(self: *EnforceConstPointers, allocator: std.mem.Allocator, fault_tracker: *analysis.SourceCodeFaultTracker, tree: std.zig.Ast, node_idx: u32) !void {
+    pub fn check_node(
+        self: *EnforceConstPointers,
+        allocator: std.mem.Allocator,
+        fault_tracker: *analysis.SourceCodeFaultTracker,
+        tree: std.zig.Ast,
+        node_idx: u32,
+    ) !void {
         if (self.last_enforced_fn_node_idx > node_idx) return;
 
         // Is it a function prototype? If so, we will need to check const pointer enforcement
@@ -34,7 +40,8 @@ pub const EnforceConstPointers = struct {
 
             while (i < tree.nodes.len) : (i += 1) {
                 const fn_decl = tree.nodes.get(i);
-                if (fn_decl.tag != .fn_decl) return; // TODO: can we just skip to the fn_decl instead of doing the fullProto stuff?
+                // TODO: can we just skip to the fn_decl instead of doing the fullProto stuff?
+                if (fn_decl.tag != .fn_decl) return;
                 const block = tree.nodes.get(fn_decl.data.rhs);
 
                 var cur_node = block.data.lhs;
@@ -49,7 +56,7 @@ pub const EnforceConstPointers = struct {
                     // loop over the block
                     while (cur_node < tree.nodes.len) : (cur_node += 1) {
                         const node = tree.nodes.get(cur_node);
-                        if (node.tag == .block or node.tag == .block_two or node.tag == .block_semicolon or node.tag == .block_two_semicolon) break;
+                        if (is_block(node.tag)) break;
                         check_ptr_usage(&mutable_ptr_token_indices, tree.nodes.get(cur_node), &tree);
                     }
                     self.last_enforced_fn_node_idx = cur_node + 1;
@@ -109,7 +116,7 @@ fn check_ptr_usage(
                 var cur_node = node.data.lhs;
                 while (cur_node < tree.nodes.len) : (cur_node += 1) {
                     const next = tree.nodes.get(cur_node);
-                    if (next.tag == .block or next.tag == .block_two or next.tag == .block_semicolon or next.tag == .block_two_semicolon) break;
+                    if (is_block(next.tag)) break;
                     check_ptr_usage(mutable_ptr_token_indices, next, tree);
                 }
             }
@@ -117,8 +124,18 @@ fn check_ptr_usage(
         // TODO: implement more of these
         else => {
             // const loc = tree.tokenLocation(0, node.main_token);
-            // std.debug.print("Don't know if {} at {}:{} mutates a pointer\n", .{ node.tag, loc.line + 1, loc.column });
+            // std.debug.print(
+            //     "Don't know if {} at {}:{} mutates a pointer\n",
+            //     .{ node.tag, loc.line + 1, loc.column },
+            // );
         },
+    }
+}
+
+fn is_block(tag: std.zig.Ast.Node.Tag) bool {
+    switch (tag) {
+        .block, .block_two, .block_semicolon, .block_two_semicolon => return true,
+        else => return false,
     }
 }
 
@@ -139,7 +156,10 @@ fn get_identifier(node_idx: std.zig.Ast.Node.Index, tree: *const std.zig.Ast) []
         else => {
             const loc = tree.tokenLocation(0, node.main_token);
             _ = loc;
-            // std.debug.print("Don't know how to get identifier from node {any} at {}:{}\n", .{ node.tag, loc.line + 1, loc.column });
+            // std.debug.print(
+            //     "Don't know how to get identifier from node {any} at {}:{}\n",
+            //     .{ node.tag, loc.line + 1, loc.column },
+            // );
             return "";
         },
     }

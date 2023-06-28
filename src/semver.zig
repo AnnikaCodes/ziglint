@@ -89,7 +89,13 @@ pub const Version = struct {
         if (minor == null) return error.NoMinor;
         if (patch == null) return error.NoPatch;
 
-        return Version{ .major = major.?, .minor = minor.?, .patch = patch.?, .prerelease = prerelease, .build_metadata = build_metadata };
+        return Version{
+            .major = major.?,
+            .minor = minor.?,
+            .patch = patch.?,
+            .prerelease = prerelease,
+            .build_metadata = build_metadata,
+        };
     }
 
     // Returns `true` if this Version has precedence over the other Version,
@@ -130,7 +136,9 @@ pub const Version = struct {
 
             // 2. Identifiers with letters or hyphens are compared lexically in ASCII sort order.
             var idx: usize = 0;
-            while (idx < self_prerelease_identifier.?.len and idx < other_prerelease_identifier.?.len) : (idx = idx + 1) {
+            const our_prerel_len = self_prerelease_identifier.?.len;
+            const their_prerel_len = other_prerelease_identifier.?.len;
+            while (idx < our_prerel_len and idx < their_prerel_len) : (idx = idx + 1) {
                 if (self_prerelease_identifier.?[idx] > other_prerelease_identifier.?[idx]) return true;
                 if (self_prerelease_identifier.?[idx] < other_prerelease_identifier.?[idx]) return false;
             }
@@ -285,7 +293,8 @@ test "Semantic Versioning Specification — Point 11.3" {
 }
 
 test "Semantic Versioning Specification — Point 11.4" {
-    // Example: 1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-alpha.beta < 1.0.0-beta < 1.0.0-beta.2 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0.
+    // Example: 1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-alpha.beta < 1.0.0-beta < 1.0.0-beta.2
+    // 1.0.0-beta.2 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0
     try test_precedence_pair(try Version.parse("1.0.0-alpha.1"), try Version.parse("1.0.0-alpha"));
 
     try test_precedence_pair(try Version.parse("1.0.0-alpha.beta"), try Version.parse("1.0.0-alpha.1"));

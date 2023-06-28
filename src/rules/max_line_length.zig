@@ -6,7 +6,13 @@ pub const MaxLineLength = struct {
     /// The maximum number of characters per line.
     limit: u32,
 
-    pub fn check_line(self: *MaxLineLength, _: std.mem.Allocator, fault_tracker: *analysis.SourceCodeFaultTracker, line: []const u8, line_number: u32) !void {
+    pub fn check_line(
+        self: *MaxLineLength,
+        _: std.mem.Allocator,
+        fault_tracker: *analysis.SourceCodeFaultTracker,
+        line: []const u8,
+        line_number: u32,
+    ) !void {
         const length = try std.unicode.utf8CountCodepoints(line);
 
         if (length > self.limit) {
