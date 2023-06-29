@@ -90,26 +90,29 @@ pub fn build(b: *std.Build) !void {
     const run_semver_tests = b.addRunArtifact(semver_tests);
     const run_gitignore_tests = b.addRunArtifact(gitignore_tests);
 
-    // Creates a step to run the testcases/run.zig unit test runner
-    const integration_tests = b.addExecutable(.{
-        .root_source_file = .{ .path = "testcases/run.zig" },
-        .name = "integration_test",
-        .target = target,
-        .optimize = optimize,
-    });
-    integration_tests.step.dependOn(b.getInstallStep());
-    const run_integration_tests = b.addRunArtifact(integration_tests);
-    const exe_name = try std.mem.concat(b.allocator, u8, &[_][]const u8{ "ziglint", target.exeFileExt() });
-    var ziglint_path = try std.fs.path.join(b.allocator, &.{ b.exe_dir, exe_name });
-
-    run_integration_tests.addArgs(&.{ziglint_path});
-    run_integration_tests.cwd = "testcases";
-
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run tests");
-    test_step.dependOn(&run_integration_tests.step);
+    // Don't run integration tests on Windows; they expect UNIX-style '/' path separators
+    if (builtin.target.os.tag != .windows) {
+        const integration_tests = b.addExecutable(.{
+            .root_source_file = .{ .path = "testcases/run.zig" },
+            .name = "integration_test",
+            .target = target,
+            .optimize = optimize,
+        });
+        integration_tests.step.dependOn(b.getInstallStep());
+        const run_integration_tests = b.addRunArtifact(integration_tests);
+        const exe_name = try std.mem.concat(b.allocator, u8, &[_][]const u8{ "ziglint", target.exeFileExt() });
+        var ziglint_path = try std.fs.path.join(b.allocator, &.{ b.exe_dir, exe_name });
+
+        run_integration_tests.addArgs(&.{ziglint_path});
+        run_integration_tests.cwd = "testcases";
+
+        test_step.dependOn(&run_integration_tests.step);
+    }
+
     test_step.dependOn(&run_analysis_tests.step);
     test_step.dependOn(&run_semver_tests.step);
     test_step.dependOn(&run_gitignore_tests.step);
