@@ -17,8 +17,11 @@ on:
 
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  ci:
+    strategy:
+      matrix:
+          os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
       - name: Install nightly Zig
@@ -37,4 +40,4 @@ jobs:
       - name: Run tests
         run: zig build test
       - name: Executable works!
-        run: zig-out/bin/ziglint help
+        run: zig-out/bin/ziglint* help
