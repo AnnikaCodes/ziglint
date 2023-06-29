@@ -175,32 +175,42 @@ fn part_matches(path_part: []const u8, pattern_part: []const u8) bool {
     return true; // if we get here, we matched everything
 }
 
+// for tests - replaces '/' in paths with platform-specific separator
+fn fix(allocator: std.mem.Allocator, path: []const u8) []const u8 {
+    return std.mem.replaceOwned(u8, allocator, path, "/", &[_]u8{std.fs.path.sep}) catch unreachable;
+}
 test "matches" {
-    try std.testing.expect(matches("foo/bar/baz.zig", "foo/bar/baz.zig"));
-    try std.testing.expect(!matches("foo/bar/baz.zig", "foo/bar/quux.zig"));
+    // arena allocator - test allocator breaks
+    var allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
 
-    try std.testing.expect(matches("foo/bar/baz.zig", "baz.zig"));
-    try std.testing.expect(!matches("foo/bar/baz.zig", "/baz.zig"));
-    try std.testing.expect(matches("foo/bar/baz.zig", "bar/baz.zig"));
-    try std.testing.expect(matches("foo/bar/baz.zig", "bar"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "foo/bar/baz.zig"));
+    try std.testing.expect(!matches(fix(a, "foo/bar/baz.zig"), "foo/bar/quux.zig"));
+
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "baz.zig"));
+    try std.testing.expect(!matches(fix(a, "foo/bar/baz.zig"), "/baz.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "bar/baz.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "bar"));
 
     // *
-    try std.testing.expect(matches("foo/bar/baz.zig", "foo/bar/*.zig"));
-    try std.testing.expect(!matches("foo/bar/baz.zig", "foo/*.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "foo/bar/*.zig"));
+    try std.testing.expect(!matches(fix(a, "foo/bar/baz.zig"), "foo/*.zig"));
 
     // **
-    try std.testing.expect(matches("foo/bar/baz.zig", "foo/**/baz.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "foo/**/baz.zig"));
 
-    try std.testing.expect(matches("foo/bar/baz/quux.zig", "foo/**/*.zig"));
-    try std.testing.expect(matches("foo/bar/baz.zig", "foo/**/*.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz/quux.zig"), "foo/**/*.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "foo/**/*.zig"));
 
-    try std.testing.expect(matches("foo/bar/baz/quux.zig", "/**/*.zig"));
-    try std.testing.expect(matches("foo/bar/baz.zig", "/**/*.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz/quux.zig"), "/**/*.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "/**/*.zig"));
 
-    try std.testing.expect(matches("foo/bar/baz/quux.zig", "**/quux.zig"));
-    try std.testing.expect(matches("foo/bar/baz/quux.zig", "foo/bar/**"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz/quux.zig"), "**/quux.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz/quux.zig"), "foo/bar/**"));
 
     // ?
-    try std.testing.expect(matches("foo/bar/baz.zig", "foo/b?r/ba?.zig"));
-    try std.testing.expect(!matches("foo/bar/baz.zig", "foo/bar?baz.zig"));
+    try std.testing.expect(matches(fix(a, "foo/bar/baz.zig"), "foo/b?r/ba?.zig"));
+    try std.testing.expect(!matches(fix(a, "foo/bar/baz.zig"), "foo/bar?baz.zig"));
 }

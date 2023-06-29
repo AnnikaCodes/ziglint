@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
@@ -98,7 +99,8 @@ pub fn build(b: *std.Build) !void {
     });
     integration_tests.step.dependOn(b.getInstallStep());
     const run_integration_tests = b.addRunArtifact(integration_tests);
-    const ziglint_path = try std.fs.path.join(b.allocator, &.{ b.exe_dir, "ziglint" });
+    const exe_name = try std.mem.concat(b.allocator, u8, &[_][]const u8{ "ziglint", target.exeFileExt() });
+    var ziglint_path = try std.fs.path.join(b.allocator, &.{ b.exe_dir, exe_name });
 
     run_integration_tests.addArgs(&.{ziglint_path});
     run_integration_tests.cwd = "testcases";
