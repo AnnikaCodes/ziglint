@@ -264,17 +264,21 @@ fn get_config(file_name: []const u8, alloc: std.mem.Allocator) !?std.json.Parsed
 // finds a ziglintrc file in the given directory or any parent directory
 // caller needs to free the result if it's there
 fn find_file(alloc: std.mem.Allocator, file_name: []const u8, search_name: []const u8) !?[]const u8 {
-    const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
+    var is_dir = false;
+    if (std.fs.cwd().openFile(file_name, .{})) |file| {
+        is_dir = ((try file.stat()).kind == .directory);
+        file.close();
+    } else |err| {
         switch (err) {
             error.FileNotFound => {
                 try stderr_print("error: file not found: {s}", .{file_name});
                 std.process.exit(1);
             },
+            error.IsDir => is_dir = true,
             else => return err,
         }
-    };
-    defer file.close();
-    var is_dir = (try file.stat()).kind == .directory;
+    }
+
     var full_path = try std.fs.realpathAlloc(alloc, file_name);
     defer alloc.free(full_path);
     var nearest_dir = if (is_dir) full_path else std.fs.path.dirname(full_path);
@@ -304,7 +308,7 @@ fn lint(
     ignore_tracker: *const IgnoreTracker,
     seen: *std.StringHashMap(void),
     is_top_level: bool,
-) !void {
+) anyerror!void {
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.AccessDenied => try stderr_print("error: access denied: '{s}'", .{file_name}),
@@ -325,6 +329,12 @@ fn lint(
                         .{ file_name, real_path },
                     );
                 }
+            },
+
+            // Windows can't open a directory with openFile, apparently.
+            error.IsDir => {
+                try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen);
+                return;
             },
 
             else => try stderr_print("error: couldn't open '{s}': {}", .{ file_name, err }),
@@ -423,26 +433,34 @@ fn lint(
                 try stdout_writer.writeAll("\n");
             }
         },
-        .directory => {
-            // iterate over it
-            // todo: is walker faster?
-            var dir = try std.fs.cwd().openIterableDir(file_name, .{});
-            defer dir.close();
-
-            var iterable = dir.iterate();
-            var entry = try iterable.next();
-            while (entry != null) : (entry = try iterable.next()) {
-                const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
-                defer alloc.free(full_name);
-                try lint(full_name, alloc, analyzer, ignore_tracker, seen, false);
-            }
-        },
+        .directory => try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen),
         else => {
             try stderr_print(
                 "ignoring '{s}', which is not a file or directory, but a(n) {}.",
                 .{ file_name, kind },
             );
         },
+    }
+}
+
+// iterate over a directory and lint
+fn walk_directory(
+    file_name: []const u8,
+    alloc: std.mem.Allocator,
+    analyzer: analysis.ASTAnalyzer,
+    ignore_tracker: *const IgnoreTracker,
+    seen: *std.StringHashMap(void),
+) !void {
+    // todo: is walker faster?
+    var dir = try std.fs.cwd().openIterableDir(file_name, .{});
+    defer dir.close();
+
+    var iterable = dir.iterate();
+    var entry = try iterable.next();
+    while (entry != null) : (entry = try iterable.next()) {
+        const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
+        defer alloc.free(full_name);
+        try lint(full_name, alloc, analyzer, ignore_tracker, seen, false);
     }
 }
 
