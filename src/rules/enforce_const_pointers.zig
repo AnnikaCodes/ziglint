@@ -96,14 +96,16 @@ fn check_ptr_usage(
         },
         // does not mutate
         // actually wait, TODO: does ptr_type_aligned ever mutate a pointer in pointer-to-pointer situations?
-        .identifier, .string_literal, .number_literal, .ptr_type_aligned => {},
+        .identifier, .string_literal, .number_literal, .ptr_type_aligned, .field_access, .root => {},
         // these just hold other stuff
-        .if_simple, .equal_equal => {
-            // lhs is the condition express, rhs is what is executed if it's true
+        .if_simple, .equal_equal, .call_one, .struct_init_dot_two, .struct_init_dot_comma => {
             // we must check them both!
             check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.lhs), tree);
             check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.rhs), tree);
         },
+        // variable declaration
+        // var a: lhs = rhs
+        .simple_var_decl => check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.rhs), tree),
         .block_two, .block_two_semicolon => {
             if (node.data.rhs > node.data.lhs) {
                 var cur_node = node.data.lhs;
@@ -123,11 +125,11 @@ fn check_ptr_usage(
         },
         // TODO: implement more of these
         else => {
-            // const loc = tree.tokenLocation(0, node.main_token);
-            // std.debug.print(
-            //     "Don't know if {} at {}:{} mutates a pointer\n",
-            //     .{ node.tag, loc.line + 1, loc.column },
-            // );
+            const loc = tree.tokenLocation(0, node.main_token);
+            std.debug.print(
+                "Don't know if {} at {}:{} mutates a pointer\n",
+                .{ node.tag, loc.line + 1, loc.column },
+            );
         },
     }
 }

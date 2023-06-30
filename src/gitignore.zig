@@ -24,7 +24,7 @@ pub const IgnoreTracker = struct {
         };
     }
 
-    pub fn deinit(self: *IgnoreTracker) void {
+    pub fn deinit(self: *const IgnoreTracker) void {
         self.excludes.deinit();
         self.includes.deinit();
     }
