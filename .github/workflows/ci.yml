@@ -15,7 +15,6 @@ on:
         required: false
         default: false
 
-
 jobs:
   ci:
     strategy:
@@ -39,5 +38,9 @@ jobs:
         run: zig build
       - name: Run tests
         run: zig build test
-      - name: Executable works!
-        run: zig-out/bin/ziglint* help
+      - name: Executable works! (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: zig-out/bin/ziglint.exe help
+      - name: Executable works! (non-Windows)
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: zig-out/bin/ziglint help
