@@ -162,7 +162,7 @@ pub fn main() anyerror!void {
             } else if (std.mem.eql(u8, switch_name, "check-format")) {
                 switches.check_format = true;
             } else if (std.mem.eql(u8, switch_name, "require-const-pointer-params")) {
-                switches.enforce_const_pointers = false;
+                switches.enforce_const_pointers = true;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
             } else {
