@@ -74,7 +74,9 @@ ziglint --check-format
 ```
 
 ## `exclude`
-This rule excludes files from being linted (unless they are specified on the command line directly). Currently, it's only available in `ziglint.json`.
+This rule excludes files from being linted (unless they are specified on the command line directly).
+
+Note that include/exclude directives are additive and there is no priority for specifying on the command line. (However, include directives take precedence over excludes.)
 
 It accepts Gitignore-style globs to specify paths.
 ### `ziglint.json`
@@ -83,9 +85,14 @@ It accepts Gitignore-style globs to specify paths.
     "exclude": <array of files to exclude>
 }
 ```
+### Command line
+```bash
+ziglint --exclude <comma-separated list of paths to exclude>
+```
 
 ## `include`
-This rule negates exclusions. If the `include`d files aren't in the paths/working directory `ziglint` is searching in, they still won't be linted, but if they were listed in an `exclude` rule then they will be. Currently, this rule is only available in `ziglint.json`.
+This rule negates exclusions. If the `include`d files aren't in the paths/working directory `ziglint` is searching in, they still won't be linted, but if they were listed in an `exclude` rule then they will be.
+Note that include/exclude directives are additive and there is no priority for specifying on the command line. (However, include directives take precedence over excludes.)
 
 Like `exclude`, it accepts Gitignore-style globs to match paths.
 ### `ziglint.json`
@@ -93,6 +100,10 @@ Like `exclude`, it accepts Gitignore-style globs to match paths.
 {
     "include": <array of files to include>
 }
+```
+### Command line
+```bash
+ziglint --include <comma-separated list of paths to include>
 ```
 
 ## `max_line_length`

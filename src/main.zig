@@ -53,10 +53,24 @@ const Configuration = struct {
     include: ?[][]const u8 = null,
 
     /// Replaces our fields with its fields if the field is not null in other
-    pub fn merge(self: *Configuration, other: *const Configuration) void {
+    ///
+    /// Does NOT free potentially-allocated memory; we use an ArenaAllocator so it's all freed when ziglint exits.
+    pub fn merge(self: *Configuration, other: *const Configuration, alloc: std.mem.Allocator) !void {
         inline for (std.meta.fields(Configuration)) |field| {
             if (@field(other, field.name)) |value| {
-                @field(self, field.name) = value;
+                const is_array = field.type == ?[][]const u8;
+                const self_has_value = @field(self, field.name) != null;
+                if (is_array and self_has_value) {
+                    // merge fields via concatenation
+                    @field(self, field.name) = try std.mem.concat(
+                        alloc,
+                        []const u8,
+                        &.{ @field(self, field.name).?, value },
+                    );
+                } else {
+                    // merge fields via replacement
+                    @field(self, field.name) = value;
+                }
             }
         }
     }
@@ -84,6 +98,15 @@ fn show_help() !void {
         \\
         \\      --include-gitignored
         \\          lint files excluded by .gitignore directives
+        \\
+        \\      --exclude <paths>
+        \\          exclude files or directories from linting
+        \\          <paths> should be a comma-separated list of Gitignore-style globs
+        \\          this doesn't take priority over inclusion directives from ziglint.json or .gitignore files
+        \\
+        \\      --include <paths>
+        \\          include files or directories in linting
+        \\          <paths> should be a comma-separated list of Gitignore-style globs
         \\
         \\      --require-const-pointer-params
         \\          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
@@ -134,6 +157,8 @@ pub fn main() anyerror!void {
         const arg = args[args_idx];
         if (arg.len > 2 and arg[0] == '-' and arg[1] == '-') { // switch
             const switch_name = arg[2..];
+            const is_exclude = std.mem.eql(u8, switch_name, "exclude");
+            const is_include = std.mem.eql(u8, switch_name, "include");
             if (std.mem.eql(u8, switch_name, "max-line-length")) {
                 args_idx += 1;
                 if (args_idx >= args.len) {
@@ -165,8 +190,27 @@ pub fn main() anyerror!void {
                 switches.enforce_const_pointers = true;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
+            } else if (is_include or is_exclude) {
+                args_idx += 1;
+                if (args_idx >= args.len) {
+                    try stderr_print("{s} requires an argument of comma-spearated globs; " ++
+                        "use `ziglint help` for more information", .{arg});
+                    std.process.exit(1);
+                }
+
+                var split = std.mem.splitScalar(u8, args[args_idx], ',');
+                var globs = std.ArrayList([]const u8).init(arena_allocator);
+                while (split.next()) |glob| {
+                    try globs.append(glob);
+                }
+
+                if (is_include) {
+                    switches.include = try globs.toOwnedSlice();
+                } else if (is_exclude) {
+                    switches.exclude = try globs.toOwnedSlice();
+                } else unreachable;
             } else {
-                try stderr_print("unknown switch: --{s}\n", .{switch_name});
+                try stderr_print("unknown switch: {s}\n", .{arg});
                 try show_help();
                 std.process.exit(1);
             }
@@ -197,7 +241,7 @@ pub fn main() anyerror!void {
 
         if (config_file_parsed) |c| {
             config = c.value;
-            config.merge(&switches);
+            try config.merge(&switches, arena_allocator);
         }
 
         var analyzer = analysis.ASTAnalyzer{};
