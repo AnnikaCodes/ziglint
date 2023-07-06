@@ -208,8 +208,8 @@ pub fn main() anyerror!void {
         var ignore_tracker = IgnoreTracker.init(arena_allocator, file);
         defer ignore_tracker.deinit();
 
-        if (config.exclude) |exclus| try ignore_tracker.add_slice_to_excludes(exclus);
-        if (config.include) |inclus| try ignore_tracker.add_slice_to_includes(inclus);
+        if (config.exclude) |excludes| try ignore_tracker.add_slice_to_excludes(excludes);
+        if (config.include) |includes| try ignore_tracker.add_slice_to_includes(includes);
 
         var gitignore_text: ?[]const u8 = null;
 
