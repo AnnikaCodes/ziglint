@@ -96,7 +96,7 @@ fn check_ptr_usage(
         },
         // does not mutate
         // actually wait, TODO: does ptr_type_aligned ever mutate a pointer in pointer-to-pointer situations?
-        .identifier, .string_literal, .number_literal, .ptr_type_aligned, .field_access, .root => {},
+        .identifier, .string_literal, .number_literal, .ptr_type_aligned, .root => {},
         // these just hold other stuff
         .if_simple, .equal_equal, .call_one, .struct_init_dot_two, .struct_init_dot_comma => {
             // we must check them both!
@@ -123,6 +123,23 @@ fn check_ptr_usage(
                 }
             }
         },
+        // function call
+        .call => {
+            // lhs is the function
+            // looks like we need to cache function names to see which parameters they mutate?
+            check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.lhs), tree);
+            // rhs is a list of parameters
+            const extra_data = tree.extraData(node.data.rhs, std.zig.Ast.Node.SubRange);
+            for (tree.extra_data[extra_data.start..extra_data.end]) |param| {
+                check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(param), tree);
+            }
+        },
+        .field_access => {
+            check_ptr_usage(mutable_ptr_token_indices, tree.nodes.get(node.data.lhs), tree);
+            const token = tree.tokenSlice(node.data.rhs);
+            std.debug.print("field_access token: {s}\n", .{token});
+        },
+
         // TODO: implement more of these
         else => {
             const loc = tree.tokenLocation(0, node.main_token);
