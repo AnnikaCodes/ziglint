@@ -1,3 +1,7 @@
+### 0.0.3
+- Support for the Windows operating system has been improved.
+- [`exclude`](https://github.com/AnnikaCodes/ziglint#exclude) and [`include`](https://github.com/AnnikaCodes/ziglint#include) rules can now be specified with command-line options.
+
 ### 0.0.2
 - New [`exclude`](https://github.com/AnnikaCodes/ziglint#exclude) and [`include`](https://github.com/AnnikaCodes/ziglint#include) rules have been implemented!
 - [`max_line_length`](https://github.com/AnnikaCodes/ziglint#max_line_length) now defaults to a maximum of 100 characters per line.

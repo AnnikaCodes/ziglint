@@ -15,7 +15,7 @@ const Version = @import("./semver.zig").Version;
 const ZIGLINT_VERSION = Version{
     .major = 0,
     .minor = 0,
-    .patch = 2,
+    .patch = 3,
     .prerelease = null,
     .build_metadata = @import("comptime_build").GIT_COMMIT_HASH,
 };
