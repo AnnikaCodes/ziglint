@@ -146,6 +146,14 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             try ziglint_request.start();
             try ziglint_request.wait();
 
+            if (ziglint_request.response.status != .ok) {
+                try stderr_print(
+                    "error: couldn't download {s} version {s}: HTTP status {}",
+                    .{ asset.name, latest_version, ziglint_request.response.status },
+                );
+                std.process.exit(1);
+            }
+
             var tmpdir = std.testing.tmpDir(.{});
             defer tmpdir.cleanup();
             // open a file in the tmpdir to write into
