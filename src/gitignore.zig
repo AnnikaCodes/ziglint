@@ -35,6 +35,8 @@ pub const IgnoreTracker = struct {
         var line = split.next();
 
         while (line != null) : (line = split.next()) {
+            // remove stray \r characters from Windows line endings
+            line = std.mem.trimRight(u8, line.?, "\r");
             if (line.?.len == 0) continue;
             switch (line.?[0]) {
                 // comment
