@@ -1,3 +1,8 @@
+### 0.0.4
+- `.gitignore` files are now correctly parsed on Windows.
+- Error reporting in the upgrade process has been improved.
+- The automatic builds of `ziglint` on GitHub no longer include a faulty HTTP client.
+
 ### 0.0.3
 - Support for the Windows operating system has been improved.
 - [`exclude`](https://github.com/AnnikaCodes/ziglint#exclude) and [`include`](https://github.com/AnnikaCodes/ziglint#include) rules can now be specified with command-line options.
