@@ -353,6 +353,16 @@ fn lint(
     seen: *std.StringHashMap(void),
     is_top_level: bool,
 ) anyerror!void {
+    // we need the full, not relative, path to make sure we avoid symlink loops
+    const real_path = try std.fs.realpathAlloc(alloc, file_name);
+    if (seen.contains(real_path)) {
+        // we need to free the `real_path` memory here since we're not adding it to the hashmap
+        alloc.free(real_path);
+        return;
+    } else {
+        try seen.put(real_path, {});
+    }
+
     const file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
         switch (err) {
             error.AccessDenied => try stderr_print("error: access denied: '{s}'", .{file_name}),
@@ -363,9 +373,6 @@ fn lint(
             error.SymLinkLoop => {
                 // symlink loops should be caught by our hashmap of seen files
                 // if not, we have a problem, so let's check
-                const real_path = try std.fs.realpathAlloc(alloc, file_name);
-                defer alloc.free(real_path);
-
                 if (!seen.contains(real_path)) {
                     try stderr_print(
                         "error: couldn't open '{s}' due to a symlink loop, " ++
@@ -393,16 +400,6 @@ fn lint(
         }
     };
     defer file.close();
-
-    // we need the full, not relative, path to make sure we avoid symlink loops
-    const real_path = try std.fs.realpathAlloc(alloc, file_name);
-    if (seen.contains(real_path)) {
-        // we need to free the `real_path` memory here since we're not adding it to the hashmap
-        alloc.free(real_path);
-        return;
-    } else {
-        try seen.put(real_path, {});
-    }
 
     const metadata = try file.metadata(); // TODO: is .stat() faster?
     const kind = metadata.kind();
