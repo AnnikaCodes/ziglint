@@ -1,3 +1,6 @@
+### 0.0.5
+- `ziglint` no longer gets stuck in an infinite loop while attempting to lint certain symlink configurations on Windows.
+
 ### 0.0.4
 - `.gitignore` files are now correctly parsed on Windows.
 - Error reporting in the upgrade process has been improved.
