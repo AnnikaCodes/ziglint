@@ -279,7 +279,7 @@ pub fn main() anyerror!void {
         try stderr_print("error: too many faults ({}) to exit with the correct exit code", .{fault_count});
         std.process.exit(255);
     }
-    std.process.exit(@intCast(u8, fault_count));
+    std.process.exit(@as(u8, @intCast(fault_count)));
 }
 
 // Creates a Configuration object for the given file based on the nearest ziglintrc file.
