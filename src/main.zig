@@ -111,6 +111,9 @@ fn show_help() !void {
         \\      --require-const-pointer-params
         \\          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
         \\
+        \\when analyzing code, ziglint's exit code will be the number of faults it finds,
+        \\or 2^8 - 1 = 255 if the number of faults is too big to be represented by 8 bits.
+        \\
     );
 }
 
