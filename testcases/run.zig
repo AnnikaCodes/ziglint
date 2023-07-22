@@ -57,6 +57,12 @@ pub fn main() !void {
             };
             defer allocator.free(expected_output);
 
+            const expected_exit_code_text = test_directory.readFileAlloc(allocator, "exitcode.txt", 5) catch null;
+            defer {
+                if (expected_exit_code_text) |text| allocator.free(text);
+            }
+            const expected_exit_code = if (expected_exit_code_text) |text| (try std.fmt.parseInt(u8, text, 10)) else null;
+
             // log to stdout
             try stdout_writer.print("Running integration test '{s}'...", .{name});
             const is_gitignore = std.mem.eql(u8, name, "gitignore");
@@ -107,6 +113,23 @@ pub fn main() !void {
                 failures = true;
                 continue;
             };
+
+            switch (result.term) {
+                .Exited => {
+                    if (expected_exit_code) |code| {
+                        std.testing.expectEqual(code, result.term.Exited) catch {
+                            try stderr_writer.print("An integration test {s}FAILED{s} by wrong exit code: '{s}'\n", .{ bold_red_text, end_text_fmt, name });
+                            failures = true;
+                            continue;
+                        };
+                    }
+                },
+                else => {
+                    try stderr_writer.print("An integration test {s}FAILED{s} by wrong termination: '{s}'\n", .{ bold_red_text, end_text_fmt, name });
+                    failures = true;
+                    continue;
+                },
+            }
 
             try stdout_writer.print(" {s}ok{s}\n", .{ bold_green_text, end_text_fmt });
         }
