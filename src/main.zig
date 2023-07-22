@@ -235,6 +235,7 @@ pub fn main() anyerror!void {
     }
 
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
+    var fault_count: u64 = 0;
     for (files) |file| {
         var config_file_parsed = try get_config(file, arena_allocator);
         var config = switches;
@@ -267,8 +268,15 @@ pub fn main() anyerror!void {
             }
         }
 
-        try lint(file, allocator, analyzer, &ignore_tracker, &seen, true);
+        fault_count += try lint(file, allocator, analyzer, &ignore_tracker, &seen, true);
     }
+
+    if (fault_count >= 256) {
+        // too many faults to exit with
+        try stderr_print("error: too many faults ({}) to exit with the correct exit code", .{fault_count});
+        std.process.exit(255);
+    }
+    std.process.exit(@intCast(u8, fault_count));
 }
 
 // Creates a Configuration object for the given file based on the nearest ziglintrc file.
@@ -345,6 +353,8 @@ fn find_file(alloc: std.mem.Allocator, file_name: []const u8, search_name: []con
 // Lints a file.
 //
 // If it's a directory, recursively search it for .zig files and lint them.
+//
+// Returns the number of faults found.
 fn lint(
     file_name: []const u8,
     alloc: std.mem.Allocator,
@@ -352,13 +362,13 @@ fn lint(
     ignore_tracker: *const IgnoreTracker,
     seen: *std.StringHashMap(void),
     is_top_level: bool,
-) anyerror!void {
+) anyerror!u64 {
     // we need the full, not relative, path to make sure we avoid symlink loops
     const real_path = try std.fs.realpathAlloc(alloc, file_name);
     if (seen.contains(real_path)) {
         // we need to free the `real_path` memory here since we're not adding it to the hashmap
         alloc.free(real_path);
-        return;
+        return 0; // no faults, since we already checked this path
     } else {
         try seen.put(real_path, {});
     }
@@ -384,8 +394,7 @@ fn lint(
 
             // Windows can't open a directory with openFile, apparently.
             error.IsDir => {
-                try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen);
-                return;
+                return try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen);
             },
 
             else => try stderr_print("error: couldn't open '{s}': {}", .{ file_name, err }),
@@ -396,20 +405,21 @@ fn lint(
         if (is_top_level) {
             std.os.exit(1);
         } else {
-            return;
+            return 0;
         }
     };
     defer file.close();
 
     const metadata = try file.metadata(); // TODO: is .stat() faster?
     const kind = metadata.kind();
+    var fault_count: u64 = 0;
     switch (kind) {
         .file => {
             if (!is_top_level) {
                 // not a Zig file + not directly specified by the user
-                if (!std.mem.endsWith(u8, file_name, ".zig")) return;
+                if (!std.mem.endsWith(u8, file_name, ".zig")) return fault_count;
                 // ignored by a .gitignore
-                if (try ignore_tracker.is_ignored(file_name)) return;
+                if (try ignore_tracker.is_ignored(file_name)) return fault_count;
             }
 
             // lint it
@@ -417,13 +427,14 @@ fn lint(
             defer alloc.free(contents);
             _ = file.readAll(contents) catch |err| {
                 try stderr_print("error: couldn't read '{s}': {}", .{ file_name, err });
-                return;
+                return fault_count;
             };
 
             var ast = try std.zig.Ast.parse(alloc, contents, .zig);
             defer ast.deinit(alloc);
             var faults = try analyzer.analyze(alloc, ast);
             defer faults.deinit();
+            fault_count += faults.faults.items.len;
 
             // TODO just return faults.items
 
@@ -437,7 +448,6 @@ fn lint(
             const red_text: []const u8 = if (use_color) "\x1b[31m" else "";
             const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
             const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
-
             for (faults.faults.items) |fault| {
                 try stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
                     bold_text,
@@ -474,7 +484,9 @@ fn lint(
                 try stdout_writer.writeAll("\n");
             }
         },
-        .directory => try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen),
+        .directory => {
+            fault_count += try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen);
+        },
         else => {
             try stderr_print(
                 "ignoring '{s}', which is not a file or directory, but a(n) {}.",
@@ -482,27 +494,31 @@ fn lint(
             );
         },
     }
+    return fault_count;
 }
 
 // iterate over a directory and lint
+// returns # of faults found
 fn walk_directory(
     file_name: []const u8,
     alloc: std.mem.Allocator,
     analyzer: analysis.ASTAnalyzer,
     ignore_tracker: *const IgnoreTracker,
     seen: *std.StringHashMap(void),
-) !void {
+) !u64 {
     // todo: is walker faster?
     var dir = try std.fs.cwd().openIterableDir(file_name, .{});
     defer dir.close();
 
     var iterable = dir.iterate();
     var entry = try iterable.next();
+    var fault_count: u64 = 0;
     while (entry != null) : (entry = try iterable.next()) {
         const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
         defer alloc.free(full_name);
-        try lint(full_name, alloc, analyzer, ignore_tracker, seen, false);
+        fault_count += try lint(full_name, alloc, analyzer, ignore_tracker, seen, false);
     }
+    return fault_count;
 }
 
 // TODO: more lints! (import order, cyclomatic complexity)
