@@ -49,6 +49,7 @@ const Configuration = struct {
     check_format: ?bool = null,
     enforce_const_pointers: ?bool = null,
     include_gitignored: ?bool = null,
+    verbose: ?bool = null,
     exclude: ?[][]const u8 = null,
     include: ?[][]const u8 = null,
 
@@ -89,6 +90,9 @@ fn show_help() !void {
         \\      to view this help message again:      ziglint help
         \\
         \\options:
+        \\      --verbose
+        \\          print more information about what ziglint is doing
+        \\
         \\      --max-line-length <u32>
         \\          set the maximum length of a line of code
         \\
@@ -193,6 +197,8 @@ pub fn main() anyerror!void {
                 switches.enforce_const_pointers = true;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
+            } else if (std.mem.eql(u8, switch_name, "verbose")) {
+                switches.verbose = true;
             } else if (is_include or is_exclude) {
                 args_idx += 1;
                 if (args_idx >= args.len) {
@@ -240,7 +246,7 @@ pub fn main() anyerror!void {
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
     var fault_count: u64 = 0;
     for (files) |file| {
-        var config_file_parsed = try get_config(file, arena_allocator);
+        var config_file_parsed = try get_config(file, arena_allocator, switches.verbose orelse false);
         var config = switches;
 
         if (config_file_parsed) |c| {
@@ -264,7 +270,7 @@ pub fn main() anyerror!void {
         if (config.include_gitignored != false) {
             const gitignore_path = try find_file(arena_allocator, file, ".gitignore");
             if (gitignore_path) |path| {
-                try stderr_print("using Gitignore {s}", .{path});
+                if (config.verbose orelse false) try stderr_print("using Gitignore {s}", .{path});
 
                 gitignore_text = try std.fs.cwd().readFileAlloc(arena_allocator, path, MAX_CONFIG_BYTES);
                 try ignore_tracker.parse_gitignore(gitignore_text.?);
@@ -283,12 +289,12 @@ pub fn main() anyerror!void {
 }
 
 // Creates a Configuration object for the given file based on the nearest ziglintrc file.
-fn get_config(file_name: []const u8, alloc: std.mem.Allocator) !?std.json.Parsed(Configuration) {
+fn get_config(file_name: []const u8, alloc: std.mem.Allocator, verbose: bool) !?std.json.Parsed(Configuration) {
     const ziglintrc_path = try find_file(alloc, file_name, "ziglint.json");
     if (ziglintrc_path) |path| {
         defer alloc.free(path);
 
-        try stderr_print("using config file {s}", .{path});
+        if (verbose) try stderr_print("using config file {s}", .{path});
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, path, MAX_CONFIG_BYTES);
         const cfg = std.json.parseFromSlice(Configuration, alloc, config_raw, .{}) catch |err| err_handle_blk: {
             switch (err) {
@@ -312,7 +318,7 @@ fn get_config(file_name: []const u8, alloc: std.mem.Allocator) !?std.json.Parsed
         if (cfg != null) return cfg;
     }
 
-    try stderr_print("warning: no valid ziglint.json found! using default configuration.", .{});
+    if (verbose) try stderr_print("warning: no valid ziglint.json found! using default configuration.", .{});
     return null;
 }
 
