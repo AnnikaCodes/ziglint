@@ -1,3 +1,7 @@
+### 0.0.6
+- `ziglint` now utilizes exit codes.
+- Logging verbosity has been decreased.
+
 ### 0.0.5
 - `ziglint` no longer gets stuck in an infinite loop while attempting to lint certain symlink configurations on Windows.
 
