@@ -56,6 +56,8 @@ pub const SourceCodeFaultTracker = struct {
 pub const SourceCodeFaultType = union(enum) {
     // Line was too long. Value is the length of the line.
     LineTooLong: usize,
+    // Import was already imported elswhere in the file. Value is the name of the import.
+    DupeImport: []const u8,
     // Pointer parameter in a function wasn't *const. Value is the name of the parameter.
     // TODO should this include type?
     PointerParamNotConst: []const u8,
@@ -70,6 +72,7 @@ pub const ASTAnalyzer = struct {
     max_line_length: u32 = 100,
     check_format: bool = true,
     enforce_const_pointers: bool = false,
+    dupe_import: bool = false,
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
         self.max_line_length = max_line_length;
@@ -136,12 +139,15 @@ pub const ASTAnalyzer = struct {
         // TODO: look through AST nodes for other rule enforcements
         var enforce_const_pointers = @import("rules/enforce_const_pointers.zig").EnforceConstPointers{};
         var check_format = @import("rules/check_format.zig").CheckFormat{};
+        var dupe_import = @import("rules/dupe_import.zig").DupeImport.init(alloc);
+        defer dupe_import.deinit();
 
         var i: u32 = 0;
         while (i < tree.nodes.len) : (i += 1) {
             // run per-node rules
             if (self.enforce_const_pointers) try enforce_const_pointers.check_node(alloc, &faults, tree, i);
             if (self.check_format) try check_format.check_node(alloc, &faults, tree, i);
+            if (self.dupe_import) try dupe_import.check_node(alloc, &faults, tree, i);
         }
         return faults;
     }

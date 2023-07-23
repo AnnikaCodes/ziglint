@@ -47,6 +47,7 @@ pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
 const Configuration = struct {
     max_line_length: ?u32 = null,
     check_format: ?bool = null,
+    dupe_import: ?bool = null,
     enforce_const_pointers: ?bool = null,
     include_gitignored: ?bool = null,
     verbose: ?bool = null,
@@ -99,6 +100,9 @@ fn show_help() !void {
         \\      --check-format
         \\          ensure code is syntactically correct and formatted according to Zig standards
         \\          (this is similar to what `zig fmt --check` does)
+        \\
+        \\      --dupe-import
+        \\           check for cases where @import is called multiple times with the same value within a file
         \\
         \\      --include-gitignored
         \\          lint files excluded by .gitignore directives
@@ -193,6 +197,8 @@ pub fn main() anyerror!void {
                 };
             } else if (std.mem.eql(u8, switch_name, "check-format")) {
                 switches.check_format = true;
+            } else if (std.mem.eql(u8, switch_name, "dupe-import")) {
+                switches.dupe_import = true;
             } else if (std.mem.eql(u8, switch_name, "require-const-pointer-params")) {
                 switches.enforce_const_pointers = true;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
@@ -469,6 +475,10 @@ fn lint(
                     .LineTooLong => |len| try stdout_writer.print(
                         "line is {s}{} characters long{s}; the maximum is {}",
                         .{ red_text, len, end_text_fmt, analyzer.max_line_length },
+                    ),
+                    .DupeImport => |name| try stdout_writer.print(
+                        "found {s}duplicate import{s} of {s}",
+                        .{ red_text, end_text_fmt, name },
                     ),
                     .PointerParamNotConst => |name| try stdout_writer.print(
                         "pointer parameter {s}{s}{s}{s} is not const{s}, but I think it can be",

@@ -118,3 +118,16 @@ This rule restricts the possible length of a line of source code. It will create
 ```bash
 ziglint --max-line-length <maximum number of characters per line>
 ```
+
+## `dupe_import`
+This rule checks for cases where `@import` is called multiple times with the same value within a file.
+### `ziglint.json`
+```json
+{
+    "dupe_import": true
+}
+```
+### Command line
+```bash
+ziglint --dupe-import
+```
