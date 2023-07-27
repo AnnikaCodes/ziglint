@@ -48,7 +48,6 @@ const Configuration = struct {
     max_line_length: ?u32 = null,
     check_format: ?bool = null,
     dupe_import: ?bool = null,
-    enforce_const_pointers: ?bool = null,
     include_gitignored: ?bool = null,
     verbose: ?bool = null,
     exclude: ?[][]const u8 = null,
@@ -115,9 +114,6 @@ fn show_help() !void {
         \\      --include <paths>
         \\          include files or directories in linting
         \\          <paths> should be a comma-separated list of Gitignore-style globs
-        \\
-        \\      --require-const-pointer-params
-        \\          require all unmutated pointer parameters to functions be `const` (not yet fully implemented)
         \\
         \\when analyzing code, ziglint's exit code will be the number of faults it finds,
         \\or 2^8 - 1 = 255 if the number of faults is too big to be represented by 8 bits.
@@ -199,8 +195,6 @@ pub fn main() anyerror!void {
                 switches.check_format = true;
             } else if (std.mem.eql(u8, switch_name, "dupe-import")) {
                 switches.dupe_import = true;
-            } else if (std.mem.eql(u8, switch_name, "require-const-pointer-params")) {
-                switches.enforce_const_pointers = true;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
             } else if (std.mem.eql(u8, switch_name, "verbose")) {
@@ -461,7 +455,8 @@ fn lint(
             const use_color: bool = stdout.supportsAnsiEscapeCodes();
             const bold_text: []const u8 = if (use_color) "\x1b[1m" else "";
             const red_text: []const u8 = if (use_color) "\x1b[31m" else "";
-            const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
+            // currently not used but makes for a nice highlight!
+            // const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
             const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
             for (faults.faults.items) |fault| {
                 try stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
@@ -479,16 +474,6 @@ fn lint(
                     .DupeImport => |name| try stdout_writer.print(
                         "found {s}duplicate import{s} of {s}",
                         .{ red_text, end_text_fmt, name },
-                    ),
-                    .PointerParamNotConst => |name| try stdout_writer.print(
-                        "pointer parameter {s}{s}{s}{s} is not const{s}, but I think it can be",
-                        .{
-                            bold_magenta,
-                            name,
-                            end_text_fmt,
-                            red_text,
-                            end_text_fmt,
-                        },
                     ),
                     .ImproperlyFormatted => try stdout_writer.print(
                         "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",

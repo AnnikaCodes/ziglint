@@ -1,4 +1,3 @@
 {
-    "max_line_length": 100,
-    "enforce_const_pointers": false
+    "max_line_length": 100
 }

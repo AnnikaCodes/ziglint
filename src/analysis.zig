@@ -58,9 +58,6 @@ pub const SourceCodeFaultType = union(enum) {
     LineTooLong: usize,
     // Import was already imported elswhere in the file. Value is the name of the import.
     DupeImport: []const u8,
-    // Pointer parameter in a function wasn't *const. Value is the name of the parameter.
-    // TODO should this include type?
-    PointerParamNotConst: []const u8,
     // Error with the AST. Error is in SourceCodeFault ast_error field.
     ASTError,
     // The source code is not formatted according to Zig standards.
@@ -71,7 +68,6 @@ pub const ASTAnalyzer = struct {
     // 0 for no checking
     max_line_length: u32 = 100,
     check_format: bool = true,
-    enforce_const_pointers: bool = false,
     dupe_import: bool = false,
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
@@ -137,7 +133,6 @@ pub const ASTAnalyzer = struct {
         }
 
         // TODO: look through AST nodes for other rule enforcements
-        var enforce_const_pointers = @import("rules/enforce_const_pointers.zig").EnforceConstPointers{};
         var check_format = @import("rules/check_format.zig").CheckFormat{};
         var dupe_import = @import("rules/dupe_import.zig").DupeImport.init(alloc);
         defer dupe_import.deinit();
@@ -145,7 +140,6 @@ pub const ASTAnalyzer = struct {
         var i: u32 = 0;
         while (i < tree.nodes.len) : (i += 1) {
             // run per-node rules
-            if (self.enforce_const_pointers) try enforce_const_pointers.check_node(alloc, &faults, tree, i);
             if (self.check_format) try check_format.check_node(alloc, &faults, tree, i);
             if (self.dupe_import) try dupe_import.check_node(alloc, &faults, tree, i);
         }
@@ -201,7 +195,6 @@ const Tests = struct {
     test "line-length lints" {
         var analyzer = ASTAnalyzer{
             .max_line_length = 120,
-            .enforce_const_pointers = false,
             .check_format = false,
         };
         try run_tests(&analyzer, &.{
@@ -231,65 +224,6 @@ const Tests = struct {
                         .fault_type = SourceCodeFaultType{ .LineTooLong = 121 },
                     },
                 },
-            },
-        });
-    }
-
-    test "const-pointer enforcement" {
-        var analyzer = ASTAnalyzer{
-            .max_line_length = 0,
-            .enforce_const_pointers = true,
-            .check_format = false,
-        };
-
-        try run_tests(&analyzer, &.{
-            TestCase{
-                // Pointer is OK: const & unused
-                .source = "fn foo1(ptr: *const u8) void {}",
-                .expected_faults = &.{},
-            },
-
-            TestCase{
-                // Pointer is not OK: mutable and unused
-                .source = "fn foo2(ptr: *u8) void {}",
-                .expected_faults = &.{
-                    SourceCodeFault{
-                        .line_number = 1,
-                        .column_number = 8,
-                        .fault_type = SourceCodeFaultType{ .PointerParamNotConst = "ptr" },
-                        .ast_error = null,
-                    },
-                },
-            },
-
-            TestCase{
-                // Pointer is OK: const & used immutably
-                .source = "fn foo3(ptr: *const u8) u8 { return *ptr + 1; }",
-                .expected_faults = &.{},
-            },
-
-            TestCase{
-                // Pointer is OK: mutable and used mutably
-                .source = "fn foo4(ptr: *u8) void { *ptr = 1; std.debug.print('lol'); secret_third_thing(); }",
-                .expected_faults = &.{},
-            },
-
-            TestCase{
-                // Pointer is OK: mutable and used mutably
-                .source = "fn foo6(ptr: *u8) void { *ptr = 1; }",
-                .expected_faults = &.{},
-            },
-
-            TestCase{
-                // Pointer is OK: mutable and POSSIBLY used mutably
-                .source =
-                \\fn foo5(ptr: *u8) void {
-                \\   if (*ptr == 0) {
-                \\        *ptr = 1;
-                \\    }
-                \\}
-                ,
-                .expected_faults = &.{},
             },
         });
     }

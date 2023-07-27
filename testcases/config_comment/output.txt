@@ -1,4 +1,2 @@
 ./ignore.zig:4:100: line is 111 characters long; the maximum is 100
 ./ignore.zig:7:100: line is 111 characters long; the maximum is 100
-./ignore.zig:11:25: pointer parameter ptr is not const, but I think it can be
-./ignore.zig:13:25: pointer parameter ptr is not const, but I think it can be
