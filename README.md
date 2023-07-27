@@ -131,3 +131,19 @@ This rule checks for cases where `@import` is called multiple times with the sam
 ```bash
 ziglint --dupe-import
 ```
+
+## `file_as_struct`
+This rule checks for file name capitalization in the presence of top level fields. Files with top
+level fields can be treated as structs and per Zig [naming
+conventions](https://ziglang.org/documentation/master/#Names) for types should be capitalized,
+otherwise file names should not be capitalized.
+### `ziglint.json`
+```json
+{
+    "file_as_struct": true
+}
+```
+### Command line
+```bash
+ziglint --file-as-struct
+```
