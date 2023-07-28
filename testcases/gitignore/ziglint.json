@@ -1,3 +1,6 @@
 {
-    "max_line_length": 100
+    "max_line_length": {
+        "config": 100,
+        "severity": "error"
+    }
 }

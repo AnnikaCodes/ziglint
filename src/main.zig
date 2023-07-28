@@ -44,11 +44,108 @@ pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
     }
 }
 
+const SeverityParseError = error{
+    InvalidSeverityLevel,
+};
+const SeverityLevel = enum {
+    /// Prints the fault and increments the exit code
+    Error,
+    /// Prints the fault but does not increment the exit code
+    Warning,
+    /// Does not look for the fault
+    Disabled,
+
+    fn parse(value: RawJSONSeverityLevel) SeverityParseError!SeverityLevel {
+        if (std.mem.eql(u8, value, "error")) return .Error;
+        if (std.mem.eql(u8, value, "warning")) return .Warning;
+        if (std.mem.eql(u8, value, "disabled")) return .Disabled;
+
+        return SeverityParseError.InvalidSeverityLevel;
+    }
+};
+
+/// Packages a severity level with a configuration value.
+fn SeverityLevelPlusConfig(comptime config: type) type {
+    return struct {
+        severity: SeverityLevel,
+        config: config,
+    };
+}
+
+const RawJSONSeverityLevel = []const u8;
+fn RawJSONSeverityLevelPlusConfig(comptime config: type) type {
+    return struct {
+        severity: RawJSONSeverityLevel,
+        config: config,
+    };
+}
+
+// Since the JSON includes strings, not enums, we parse the JSON into this intermediate struct, then
+// parse this into a Configuration.
+//
+// TODO: can we programmatically generte this from a Configuration somehow?
+const JSONConfiguration = struct {
+    max_line_length: ?RawJSONSeverityLevelPlusConfig(u32) = null,
+    check_format: ?RawJSONSeverityLevel = null,
+    dupe_import: ?RawJSONSeverityLevel = null,
+    file_as_struct: ?RawJSONSeverityLevel = null,
+    include_gitignored: ?bool = null,
+    exclude: ?[][]const u8 = null,
+    include: ?[][]const u8 = null,
+
+    fn parseSeverityFromString(severity_string: RawJSONSeverityLevel) SeverityLevel {
+        return SeverityLevel.parse(severity_string) catch {
+            stderr_print(
+                "'{s}' is not a valid severity level. " ++
+                    "Valid severity levels are 'error', 'warning', and 'disabled'.",
+                .{severity_string},
+            ) catch unreachable;
+            std.process.exit(1);
+        };
+    }
+
+    fn to_config(self: JSONConfiguration) !Configuration {
+        var configuration = Configuration{};
+
+        inline for (std.meta.fields(JSONConfiguration)) |field| {
+            if (@field(self, field.name) != null) {
+                const field_value = @field(self, field.name).?;
+                switch (field.type) {
+                    // convert to SeverityLevel
+                    ?RawJSONSeverityLevel => {
+                        const severity = JSONConfiguration.parseSeverityFromString(field_value);
+                        @field(configuration, field.name) = severity;
+                    },
+                    // convert to SeverityLevelPlusConfig(u32)
+                    ?RawJSONSeverityLevelPlusConfig(u32) => {
+                        const severity = JSONConfiguration.parseSeverityFromString(field_value.severity);
+
+                        @field(configuration, field.name) = SeverityLevelPlusConfig(u32){
+                            .severity = severity,
+                            .config = field_value.config,
+                        };
+                    },
+                    // no conversion needed
+                    ?bool, ?[][]const u8 => @field(configuration, field.name) = field_value,
+                    else => {
+                        try stderr_print(
+                            "Couldn't parse type {s} in the Configuation from JSON. Something has gone very wrong.",
+                            .{@typeName(field.type)},
+                        );
+                        @panic("panicking...");
+                    },
+                }
+            }
+        }
+        return configuration;
+    }
+};
+
 const Configuration = struct {
-    max_line_length: ?u32 = null,
-    check_format: ?bool = null,
-    dupe_import: ?bool = null,
-    file_as_struct: ?bool = null,
+    max_line_length: ?SeverityLevelPlusConfig(u32) = null,
+    check_format: ?SeverityLevel = null,
+    dupe_import: ?SeverityLevel = null,
+    file_as_struct: ?SeverityLevel = null,
     include_gitignored: ?bool = null,
     verbose: ?bool = null,
     exclude: ?[][]const u8 = null,
@@ -125,6 +222,23 @@ fn show_help() !void {
     );
 }
 
+// look ahead to the next argument to see if it's a "warn" or "warning" directive
+fn get_severity_level(args: [][]const u8, args_idx: usize) SeverityLevel {
+    const next_idx = args_idx + 1;
+    if (next_idx >= args.len) return SeverityLevel.Error; // default to Error
+
+    if (is_warning(args[next_idx])) {
+        return SeverityLevel.Warning;
+    } else {
+        return SeverityLevel.Error;
+    }
+}
+
+fn is_warning(text: []const u8) bool {
+    const trimmed = std.mem.trim(u8, text, " ");
+    return (std.mem.eql(u8, trimmed, "warn") or std.mem.eql(u8, trimmed, "warning"));
+}
+
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -180,27 +294,35 @@ pub fn main() anyerror!void {
                     std.process.exit(1);
                 }
 
-                const len = args[args_idx];
-                switches.max_line_length = std.fmt.parseInt(u32, len, 10) catch |err| {
+                var len_string: []const u8 = args[args_idx];
+                var severity_level = SeverityLevel.Error;
+                if (std.mem.indexOfScalar(u8, len_string, ',')) |comma_location| {
+                    const severity_text = std.mem.trim(u8, len_string[comma_location + 1 ..], " ");
+                    if (is_warning(severity_text)) severity_level = .Warning;
+                    len_string = len_string[0..comma_location];
+                }
+
+                const max_len = std.fmt.parseInt(u32, len_string, 10) catch |err| {
                     switch (err) {
                         error.InvalidCharacter => {
-                            try stderr_print("invalid (non-digit) character in '--max-line-length {s}'", .{len});
+                            try stderr_print("invalid (non-digit) character in '--max-line-length {s}'", .{len_string});
                         },
                         error.Overflow => {
                             try stderr_print(
                                 "--max-line-length value {s} doesn't fit in a 32-bit unsigned integer",
-                                .{len},
+                                .{len_string},
                             );
                         },
                     }
                     std.process.exit(1);
                 };
+                switches.max_line_length = .{ .severity = severity_level, .config = max_len };
             } else if (std.mem.eql(u8, switch_name, "check-format")) {
-                switches.check_format = true;
+                switches.check_format = get_severity_level(args, args_idx);
             } else if (std.mem.eql(u8, switch_name, "dupe-import")) {
-                switches.dupe_import = true;
+                switches.dupe_import = get_severity_level(args, args_idx);
             } else if (std.mem.eql(u8, switch_name, "file-as-struct")) {
-                switches.file_as_struct = true;
+                switches.file_as_struct = get_severity_level(args, args_idx);
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
             } else if (std.mem.eql(u8, switch_name, "verbose")) {
@@ -262,7 +384,14 @@ pub fn main() anyerror!void {
 
         var analyzer = analysis.ASTAnalyzer{};
         inline for (std.meta.fields(analysis.ASTAnalyzer)) |field| {
-            if (@field(config, field.name)) |value| @field(analyzer, field.name) = value;
+            if (@field(config, field.name)) |value| {
+                // the AST analyzer doesn't need to know if it's an error or warning.
+                @field(analyzer, field.name) = switch (@TypeOf(value)) {
+                    SeverityLevel => value != .Disabled,
+                    SeverityLevelPlusConfig(u32) => if (value.severity == .Disabled) 0 else value.config,
+                    else => value,
+                };
+            }
         }
 
         var ignore_tracker = IgnoreTracker.init(arena_allocator, file);
@@ -283,7 +412,7 @@ pub fn main() anyerror!void {
             }
         }
 
-        fault_count += try lint(file, allocator, analyzer, &ignore_tracker, &seen, true);
+        fault_count += try lint(file, allocator, analyzer, &ignore_tracker, &seen, config, true);
     }
 
     if (fault_count >= 256) {
@@ -302,7 +431,12 @@ fn get_config(file_name: []const u8, alloc: std.mem.Allocator, verbose: bool) !?
 
         if (verbose) try stderr_print("using config file {s}", .{path});
         const config_raw = try std.fs.cwd().readFileAlloc(alloc, path, MAX_CONFIG_BYTES);
-        const cfg = std.json.parseFromSlice(Configuration, alloc, config_raw, .{}) catch |err| err_handle_blk: {
+        const possible_json_cfg = std.json.parseFromSlice(
+            JSONConfiguration,
+            alloc,
+            config_raw,
+            .{},
+        ) catch |err| err_handle_blk: {
             switch (err) {
                 error.UnknownField => {
                     var field_names: [fields.len][]const u8 = undefined;
@@ -321,7 +455,13 @@ fn get_config(file_name: []const u8, alloc: std.mem.Allocator, verbose: bool) !?
             }
             break :err_handle_blk null;
         };
-        if (cfg != null) return cfg;
+        if (possible_json_cfg) |json_cfg| {
+            return .{
+                .arena = json_cfg.arena,
+                // convert JSONConfiguration -> Configuration and parse the severity levels into enums
+                .value = try json_cfg.value.to_config(),
+            };
+        }
     }
 
     if (verbose) try stderr_print("warning: no valid ziglint.json found! using default configuration.", .{});
@@ -376,6 +516,7 @@ fn lint(
     analyzer: analysis.ASTAnalyzer,
     ignore_tracker: *const IgnoreTracker,
     seen: *std.StringHashMap(void),
+    config: Configuration,
     is_top_level: bool,
 ) anyerror!u64 {
     // we need the full, not relative, path to make sure we avoid symlink loops
@@ -409,7 +550,7 @@ fn lint(
 
             // Windows can't open a directory with openFile, apparently.
             error.IsDir => {
-                return try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen);
+                return try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen, config);
             },
 
             else => try stderr_print("error: couldn't open '{s}': {}", .{ file_name, err }),
@@ -449,7 +590,6 @@ fn lint(
             defer ast.deinit(alloc);
             var faults = try analyzer.analyze(alloc, file_name, ast);
             defer faults.deinit();
-            fault_count += faults.faults.items.len;
 
             // TODO just return faults.items
 
@@ -461,6 +601,8 @@ fn lint(
             const use_color: bool = stdout.supportsAnsiEscapeCodes();
             const bold_text: []const u8 = if (use_color) "\x1b[1m" else "";
             const red_text: []const u8 = if (use_color) "\x1b[31m" else "";
+            const yellow_text: []const u8 = if (use_color) "\x1b[33m" else "";
+
             // currently not used but makes for a nice highlight!
             // const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
             const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
@@ -472,32 +614,60 @@ fn lint(
                     fault.column_number,
                     end_text_fmt,
                 });
+                var warning = false;
+                var fault_formatting = red_text;
                 switch (fault.fault_type) {
-                    .LineTooLong => |len| try stdout_writer.print(
-                        "line is {s}{} characters long{s}; the maximum is {}",
-                        .{ red_text, len, end_text_fmt, analyzer.max_line_length },
-                    ),
-                    .DupeImport => |name| try stdout_writer.print(
-                        "found {s}duplicate import{s} of {s}",
-                        .{ red_text, end_text_fmt, name },
-                    ),
+                    .LineTooLong => |len| {
+                        if (config.max_line_length != null and config.max_line_length.?.severity == .Warning) {
+                            warning = true;
+                            fault_formatting = yellow_text;
+                        }
+
+                        try stdout_writer.print(
+                            "line is {s}{} characters long{s}; the maximum is {}",
+                            .{ fault_formatting, len, end_text_fmt, analyzer.max_line_length },
+                        );
+                    },
+                    .DupeImport => |name| {
+                        // TODO: can we do some shenanigans with @field to make this if not have to be in every switch?
+                        if (config.dupe_import == .Warning) {
+                            warning = true;
+                            fault_formatting = yellow_text;
+                        }
+
+                        try stdout_writer.print(
+                            "found {s}duplicate import{s} of {s}",
+                            .{ fault_formatting, end_text_fmt, name },
+                        );
+                    },
                     .FileAsStruct => |capitalize| {
+                        if (config.file_as_struct == .Warning) {
+                            warning = true;
+                            fault_formatting = yellow_text;
+                        }
+
                         if (capitalize) {
                             try stdout_writer.print(
                                 "found top level fields, file name should be {s}capitalized{s}",
-                                .{ red_text, end_text_fmt },
+                                .{ fault_formatting, end_text_fmt },
                             );
                         } else {
                             try stdout_writer.print(
                                 "found no top level fields, file name should be {s}lowercase{s}",
-                                .{ red_text, end_text_fmt },
+                                .{ fault_formatting, end_text_fmt },
                             );
                         }
                     },
-                    .ImproperlyFormatted => try stdout_writer.print(
-                        "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",
-                        .{ red_text, end_text_fmt },
-                    ),
+                    .ImproperlyFormatted => {
+                        if (config.check_format == .Warning) {
+                            warning = true;
+                            fault_formatting = yellow_text;
+                        }
+                        try stdout_writer.print(
+                            "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",
+                            .{ fault_formatting, end_text_fmt },
+                        );
+                    },
                     .ASTError => {
                         try stdout_writer.print("Zig's code parser detected an error: {s}", .{red_text});
                         try ast.renderError(fault.ast_error.?, stdout_writer);
@@ -505,10 +675,12 @@ fn lint(
                     },
                 }
                 try stdout_writer.writeAll("\n");
+
+                if (!warning) fault_count += 1;
             }
         },
         .directory => {
-            fault_count += try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen);
+            fault_count += try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen, config);
         },
         else => {
             try stderr_print(
@@ -528,6 +700,7 @@ fn walk_directory(
     analyzer: analysis.ASTAnalyzer,
     ignore_tracker: *const IgnoreTracker,
     seen: *std.StringHashMap(void),
+    config: Configuration,
 ) !u64 {
     // todo: is walker faster?
     var dir = try std.fs.cwd().openIterableDir(file_name, .{});
@@ -539,7 +712,7 @@ fn walk_directory(
     while (entry != null) : (entry = try iterable.next()) {
         const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
         defer alloc.free(full_name);
-        fault_count += try lint(full_name, alloc, analyzer, ignore_tracker, seen, false);
+        fault_count += try lint(full_name, alloc, analyzer, ignore_tracker, seen, config, false);
     }
     return fault_count;
 }
