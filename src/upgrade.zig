@@ -129,14 +129,6 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             defer headers.deinit();
             try headers.append("Accept", asset.content_type);
 
-            // the redirect URI becomes EVIL and CORRUPTED due to bugs
-            // specifically, the %s from %-escapes in the provided URL are escaped again
-            // lib/std/Uri.zig has been patched
-            //
-            // fn isQueryChar(c: u8) bool {
-            //     return isPathChar(c) or c == '?' or c == '%'; // preescaped
-            // }
-
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 

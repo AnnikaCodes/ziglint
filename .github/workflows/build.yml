@@ -25,8 +25,6 @@ jobs:
             - name: Set compile options (release)
               if: ${{ github.event_name == 'release' }}
               run: echo "OPTIONS=-Dno-git-hash=true" >> "$GITHUB_ENV"
-            - name: Patch Uri.zig
-              run: sed -i "s/or c == '?';/or c == '?' or c == '%';/g" "$(zig env | jq .std_dir -r)/Uri.zig"
             - name: Compile
               run: zig build -Dtarget=${{ matrix.cpu }}-${{ matrix.os }} -Doptimize=ReleaseFast ${{ env.OPTIONS }}
             - name: Set binary suffix (Windows)
