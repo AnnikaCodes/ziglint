@@ -1,0 +1,2 @@
+./struct.zig:1:1: found top level fields, file name should be capitalized
+./NotStruct.zig:1:1: found no top level fields, file name should be lowercase

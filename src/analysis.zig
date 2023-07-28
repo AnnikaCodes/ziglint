@@ -62,6 +62,8 @@ pub const SourceCodeFaultType = union(enum) {
     ASTError,
     // The source code is not formatted according to Zig standards.
     ImproperlyFormatted,
+    // File is incorrectly capitalized. Value is true if the file should be capitalized.
+    FileAsStruct: bool,
 };
 
 pub const ASTAnalyzer = struct {
@@ -69,6 +71,7 @@ pub const ASTAnalyzer = struct {
     max_line_length: u32 = 100,
     check_format: bool = true,
     dupe_import: bool = false,
+    file_as_struct: bool = false,
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
         self.max_line_length = max_line_length;
@@ -82,7 +85,12 @@ pub const ASTAnalyzer = struct {
     //
     // Caller must deinit the array.
     // TODO: can just return a slice?
-    pub fn analyze(self: *const ASTAnalyzer, alloc: std.mem.Allocator, tree: std.zig.Ast) !SourceCodeFaultTracker {
+    pub fn analyze(
+        self: *const ASTAnalyzer,
+        alloc: std.mem.Allocator,
+        file_name: []const u8,
+        tree: std.zig.Ast,
+    ) !SourceCodeFaultTracker {
         var faults = SourceCodeFaultTracker.new(alloc);
 
         // Enforce line length as needed
@@ -132,6 +140,11 @@ pub const ASTAnalyzer = struct {
             }
         }
 
+        var file_as_struct = @import("rules/file_as_struct.zig").FileAsStruct{};
+
+        // per-tree rules
+        if (self.file_as_struct) try file_as_struct.check_tree(alloc, &faults, file_name, tree);
+
         // TODO: look through AST nodes for other rule enforcements
         var check_format = @import("rules/check_format.zig").CheckFormat{};
         var dupe_import = @import("rules/dupe_import.zig").DupeImport.init(alloc);
@@ -171,7 +184,7 @@ const Tests = struct {
             var tree = try std.zig.Ast.parse(std.testing.allocator, case.source, .zig);
             defer tree.deinit(std.testing.allocator);
 
-            var faults = try analyzer.analyze(std.testing.allocator, tree);
+            var faults = try analyzer.analyze(std.testing.allocator, "name", tree);
             defer faults.deinit();
 
             try std.testing.expectEqual(case.expected_faults.len, faults.faults.items.len);

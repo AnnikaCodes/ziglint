@@ -48,6 +48,7 @@ const Configuration = struct {
     max_line_length: ?u32 = null,
     check_format: ?bool = null,
     dupe_import: ?bool = null,
+    file_as_struct: ?bool = null,
     include_gitignored: ?bool = null,
     verbose: ?bool = null,
     exclude: ?[][]const u8 = null,
@@ -102,6 +103,9 @@ fn show_help() !void {
         \\
         \\      --dupe-import
         \\           check for cases where @import is called multiple times with the same value within a file
+        \\
+        \\      --file-as-struct
+        \\           check for file name capitalization in the presence of top level fields
         \\
         \\      --include-gitignored
         \\          lint files excluded by .gitignore directives
@@ -195,6 +199,8 @@ pub fn main() anyerror!void {
                 switches.check_format = true;
             } else if (std.mem.eql(u8, switch_name, "dupe-import")) {
                 switches.dupe_import = true;
+            } else if (std.mem.eql(u8, switch_name, "file-as-struct")) {
+                switches.file_as_struct = true;
             } else if (std.mem.eql(u8, switch_name, "include-gitignored")) {
                 switches.include_gitignored = true;
             } else if (std.mem.eql(u8, switch_name, "verbose")) {
@@ -441,7 +447,7 @@ fn lint(
 
             var ast = try std.zig.Ast.parse(alloc, contents, .zig);
             defer ast.deinit(alloc);
-            var faults = try analyzer.analyze(alloc, ast);
+            var faults = try analyzer.analyze(alloc, file_name, ast);
             defer faults.deinit();
             fault_count += faults.faults.items.len;
 
@@ -475,6 +481,19 @@ fn lint(
                         "found {s}duplicate import{s} of {s}",
                         .{ red_text, end_text_fmt, name },
                     ),
+                    .FileAsStruct => |capitalize| {
+                        if (capitalize) {
+                            try stdout_writer.print(
+                                "found top level fields, file name should be {s}capitalized{s}",
+                                .{ red_text, end_text_fmt },
+                            );
+                        } else {
+                            try stdout_writer.print(
+                                "found no top level fields, file name should be {s}lowercase{s}",
+                                .{ red_text, end_text_fmt },
+                            );
+                        }
+                    },
                     .ImproperlyFormatted => try stdout_writer.print(
                         "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",
                         .{ red_text, end_text_fmt },
