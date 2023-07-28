@@ -6,17 +6,13 @@ const std = @import("std");
 const analysis = @import("../analysis.zig");
 
 pub const CheckFormat = struct {
-    ast_is_checked: bool = false,
-
-    pub fn check_node(
-        self: *CheckFormat,
+    pub fn check_tree(
+        _: *CheckFormat,
         alloc: std.mem.Allocator,
         fault_tracker: *analysis.SourceCodeFaultTracker,
+        _: []const u8,
         tree: std.zig.Ast,
-        _: u32,
     ) !void {
-        if (self.ast_is_checked) return;
-
         // error-free tree!
         if (tree.errors.len == 0) {
             const formatted = try tree.render(alloc);
@@ -41,7 +37,5 @@ pub const CheckFormat = struct {
                 });
             }
         }
-
-        self.ast_is_checked = true;
     }
 };

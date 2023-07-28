@@ -140,20 +140,20 @@ pub const ASTAnalyzer = struct {
             }
         }
 
+        var check_format = @import("rules/check_format.zig").CheckFormat{};
         var file_as_struct = @import("rules/file_as_struct.zig").FileAsStruct{};
 
         // per-tree rules
+        if (self.check_format) try check_format.check_tree(alloc, &faults, file_name, tree);
         if (self.file_as_struct) try file_as_struct.check_tree(alloc, &faults, file_name, tree);
 
         // TODO: look through AST nodes for other rule enforcements
-        var check_format = @import("rules/check_format.zig").CheckFormat{};
         var dupe_import = @import("rules/dupe_import.zig").DupeImport.init(alloc);
         defer dupe_import.deinit();
 
         var i: u32 = 0;
         while (i < tree.nodes.len) : (i += 1) {
             // run per-node rules
-            if (self.check_format) try check_format.check_node(alloc, &faults, tree, i);
             if (self.dupe_import) try dupe_import.check_node(alloc, &faults, tree, i);
         }
         return faults;
