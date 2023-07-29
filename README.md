@@ -3,7 +3,7 @@
 
 `ziglint` is a configurable code analysis tool for Zig codebases. It's a work in progress and doesn't have many features at the moment, but it can be used.
 
-Right now, there are only three functional linting rules: [`max_line_length`](#max_line_length), [`check_format`](#check_format), [`dupe_import`](#dupe_import), [`file_as_struct`](#file_as_struct), and [`banned_comment_phrases`](#banned_comment_phrases). However, more rules are planned.
+Right now, there are only five functional linting rules: [`max_line_length`](#max_line_length), [`check_format`](#check_format), [`dupe_import`](#dupe_import), [`file_as_struct`](#file_as_struct), and [`banned_comment_phrases`](#banned_comment_phrases). However, more rules are planned.
 
 # Installation
 Prebuilt `ziglint` binaries for the most common platforms are available through [GitHub Releases](https://github.com/AnnikaCodes/ziglint/releases/latest); this is the recommended way to install `ziglint`.
