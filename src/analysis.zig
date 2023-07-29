@@ -107,7 +107,9 @@ pub const ASTAnalyzer = struct {
         // is there a better way to do ziglint ignores via the tokenizer or something?
         // Line length hasn't yet been split off into its own rule since ziglint: ignore happens here too
         var max_line_length = @import("rules/max_line_length.zig").MaxLineLength{ .limit = self.max_line_length };
-        const banned_comment_phrases = @import("rules/banned_comment_phrases.zig").BannedCommentPhrases{ .config = self.banned_comment_phrases };
+        const banned_comment_phrases = @import("rules/banned_comment_phrases.zig").BannedCommentPhrases{
+            .config = self.banned_comment_phrases,
+        };
 
         var current_line_number: u32 = 1;
         var current_line_start: usize = 0;
@@ -139,8 +141,8 @@ pub const ASTAnalyzer = struct {
                     {
                         // if it's standalone, then disable ziglint for the next line
                         // otherwise, disable for this line
-                        const disable = if (line_has_non_comment_content) current_line_number else current_line_number + 1;
-                        try faults.disable_line(disable);
+                        const ln = if (line_has_non_comment_content) current_line_number else current_line_number + 1;
+                        try faults.disable_line(ln);
                     }
 
                     // run per-comment rules
