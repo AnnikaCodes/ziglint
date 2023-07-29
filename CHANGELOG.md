@@ -1,3 +1,14 @@
+### 0.0.7
+**BREAKING CHANGE!**
+`ziglint` now supports specifying the severity of faults that a rule produces.
+The `ziglint.json` format has been changed to accomodate this.
+
+Other changes include:
+- A `banned_comment_phrases` rule allowing the linter to fault certain phrases in comments.
+- A `file_as_struct` rule enforcing the file capitalization convention for files with top-level fields.
+- A `dupe_import` rule checking for when a file is needlessly imported multiple times.
+- The unfinished const pointer enforcement rule has been removed for now.
+
 ### 0.0.6
 - `ziglint` now utilizes exit codes.
 - Logging verbosity has been decreased.
