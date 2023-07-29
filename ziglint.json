@@ -1,5 +1,10 @@
 {
-    "max_line_length": 120,
-    "check_format": true,
+    "check_format": "error",
+    "dupe_import": "error",
+    "file_as_struct": "error",
+    "max_line_length": {
+        "config": 120,
+        "severity": "error"
+    },
     "exclude": ["/testcases/"]
 }

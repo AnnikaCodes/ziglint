@@ -12,7 +12,8 @@
 
 const std = @import("std");
 const SeverityLevel = @import("main.zig").SeverityLevel;
-const BannedPhraseConfig = @import("rules/banned_comment_phrases.zig").BannedPhraseConfig;
+const banned_comment_phrase_rule = @import("rules/banned_comment_phrases.zig");
+const BannedPhraseConfig = banned_comment_phrase_rule.BannedPhraseConfig;
 
 // A fault in the source code detected by the linter.
 pub const SourceCodeFault = struct {
@@ -107,7 +108,7 @@ pub const ASTAnalyzer = struct {
         // is there a better way to do ziglint ignores via the tokenizer or something?
         // Line length hasn't yet been split off into its own rule since ziglint: ignore happens here too
         var max_line_length = @import("rules/max_line_length.zig").MaxLineLength{ .limit = self.max_line_length };
-        const banned_comment_phrases = @import("rules/banned_comment_phrases.zig").BannedCommentPhrases{
+        const banned_comment_phrases = banned_comment_phrase_rule.BannedCommentPhrases{
             .config = self.banned_comment_phrases,
         };
 
