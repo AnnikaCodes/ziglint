@@ -47,7 +47,7 @@ pub fn stderr_print(comptime format: []const u8, args: anytype) !void {
 const SeverityParseError = error{
     InvalidSeverityLevel,
 };
-const SeverityLevel = enum {
+pub const SeverityLevel = enum {
     /// Prints the fault and increments the exit code
     Error,
     /// Prints the fault but does not increment the exit code
@@ -80,6 +80,7 @@ fn RawJSONSeverityLevelPlusConfig(comptime config: type) type {
     };
 }
 
+const BannedPhraseConfig = @import("rules/banned_comment_phrases.zig").BannedPhraseConfig;
 // Since the JSON includes strings, not enums, we parse the JSON into this intermediate struct, then
 // parse this into a Configuration.
 //
@@ -89,6 +90,7 @@ const JSONConfiguration = struct {
     check_format: ?RawJSONSeverityLevel = null,
     dupe_import: ?RawJSONSeverityLevel = null,
     file_as_struct: ?RawJSONSeverityLevel = null,
+    banned_comment_phrases: ?BannedPhraseConfig = null,
     include_gitignored: ?bool = null,
     exclude: ?[][]const u8 = null,
     include: ?[][]const u8 = null,
@@ -126,7 +128,7 @@ const JSONConfiguration = struct {
                         };
                     },
                     // no conversion needed
-                    ?bool, ?[][]const u8 => @field(configuration, field.name) = field_value,
+                    ?bool, ?[][]const u8, ?BannedPhraseConfig => @field(configuration, field.name) = field_value,
                     else => {
                         try stderr_print(
                             "Couldn't parse type {s} in the Configuation from JSON. Something has gone very wrong.",
@@ -146,6 +148,7 @@ const Configuration = struct {
     check_format: ?SeverityLevel = null,
     dupe_import: ?SeverityLevel = null,
     file_as_struct: ?SeverityLevel = null,
+    banned_comment_phrases: ?BannedPhraseConfig = null,
     include_gitignored: ?bool = null,
     verbose: ?bool = null,
     exclude: ?[][]const u8 = null,
@@ -626,6 +629,20 @@ fn lint(
                         try stdout_writer.print(
                             "line is {s}{} characters long{s}; the maximum is {}",
                             .{ fault_formatting, len, end_text_fmt, analyzer.max_line_length },
+                        );
+                    },
+                    .BannedCommentPhrase => |phrase_info| {
+                        if (phrase_info.severity_level == .Warning) {
+                            warning = true;
+                            fault_formatting = yellow_text;
+                        }
+
+                        try stdout_writer.print(
+                            "comment includes banned phrase '{s}{s}{s}':\n    {s}=> {s}{s}",
+                            .{
+                                fault_formatting, phrase_info.phrase, end_text_fmt,
+                                fault_formatting, end_text_fmt,       phrase_info.comment,
+                            },
                         );
                     },
                     .DupeImport => |name| {

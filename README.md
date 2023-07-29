@@ -3,7 +3,7 @@
 
 `ziglint` is a configurable code analysis tool for Zig codebases. It's a work in progress and doesn't have many features at the moment, but it can be used.
 
-Right now, there are only three functional linting rules: [`max_line_length`](#max_line_length), [`check_format`](#check_format), and [`dupe_import`](#dupe_import). However, more rules are planned.
+Right now, there are only three functional linting rule: [`max_line_length`](#max_line_length), [`check_format`](#check_format), and [`dupe_import`](#dupe_import). However, more rules are planned.
 
 # Installation
 Prebuilt `ziglint` binaries for the most common platforms are available through [GitHub Releases](https://github.com/AnnikaCodes/ziglint/releases/latest); this is the recommended way to install `ziglint`.
@@ -31,18 +31,10 @@ You can run `ziglint upgrade` to automatically check if a newer version of `zigl
 # Configuration
 Basic usage information can be viewed by running `ziglint help`, or you can just run `ziglint` to lint the current directory's Zig files.
 
-Each `ziglint` rule can be configured to give an error or a warning.
-Warnings still print the fault, but do not increment the exit code — this means that if only warnings are encounter, `ziglint` will exit successfully.
-When rules are specified by command line flags, they cause errors by default.
-To cause a warning instead, add `warn` or `warning` after the flag; for instance, `ziglint --check-format warn` or `ziglint --max-line-length 80,warning`.
-
 You can enable or disable rules using either command-line options or a `ziglint.json` file. `ziglint` will look for the latter configuration file in directories starting from whichever directory you specify on the command line to be linted. An example `ziglint.json` to cap line length at 120 characters might look like this:
 ```json
 {
-    "max_line_length": {
-        "config": 120,
-        "severity": "error"
-    }
+    "max_line_length": 120
 }
 ```
 
@@ -66,19 +58,31 @@ You can disable this feature with the `--include-gitignored` command-line option
 ## Rules
 Here's a list of all the linting rules supported by `ziglint`. Remember, this software is still a work in progress!
 
-Anywhere you see `<severity>`, you can replace it with:
-- `"error"` to enable the rule and treat violations as errors
-- `"warning"` to enable the rule and treat violations as warnings
-- `"disabled"` to disable the rule
+## `banned_comment_phrases`
+This rule creates a linting error or warning if specified phrases are present as substrings in comments. Users should be aware that the comment-detection code currently contains a bug with certain strings.
+
+### `ziglint.json`
+```json
+{
+    "banned_comment_phrases": {
+        "error": [phrases to raise a lint error for],
+        "warning": [phrases to raise a lint warning for]
+    }
+}
+```
+You may omit either `error` or `warning`.
+
+### Command line
+It is currently not possible to configure this rule from the command line.
 
 ## `check_format`
-This rule creates a linting error if the provided source code isn't formatted in the same way as Zig's autoformatter dictates. It also creates linting errors when there are AST (code parsing) errors.
+This rule creates a linting error or warning if the provided source code isn't formatted in the same way as Zig's autoformatter dictates. It also creates linting errors when there are AST (code parsing) errors.
 
 This rule has a similar effect to `zig fmt --check`.
 ### `ziglint.json`
 ```json
 {
-    "check_format": <severity>
+    "check_format": true
 }
 ```
 ### Command line
@@ -124,10 +128,7 @@ This rule restricts the possible length of a line of source code. It will create
 ### `ziglint.json`
 ```json
 {
-    "max_line_length": {
-        "config": <maximum number of characters per line>,
-        "severity": <severity>
-    }
+    "max_line_length": <maximum number of characters per line>
 }
 ```
 ### Command line
@@ -140,7 +141,7 @@ This rule checks for cases where `@import` is called multiple times with the sam
 ### `ziglint.json`
 ```json
 {
-    "dupe_import": <severity>
+    "dupe_import": true
 }
 ```
 ### Command line
@@ -156,7 +157,7 @@ otherwise file names should not be capitalized.
 ### `ziglint.json`
 ```json
 {
-    "file_as_struct": <severity>
+    "file_as_struct": true
 }
 ```
 ### Command line

@@ -11,6 +11,9 @@
 //! The AST-analyzing function should return a list of errors, without stopping when it encounters one.
 
 const std = @import("std");
+const SeverityLevel = @import("main.zig").SeverityLevel;
+const BannedPhraseConfig = @import("rules/banned_comment_phrases.zig").BannedPhraseConfig;
+
 // A fault in the source code detected by the linter.
 pub const SourceCodeFault = struct {
     line_number: usize,
@@ -64,6 +67,12 @@ pub const SourceCodeFaultType = union(enum) {
     ImproperlyFormatted,
     // File is incorrectly capitalized. Value is true if the file should be capitalized.
     FileAsStruct: bool,
+    /// A comment contains a banned word. Value is the banned word + severity level.
+    BannedCommentPhrase: struct {
+        phrase: []const u8,
+        comment: []const u8,
+        severity_level: SeverityLevel,
+    },
 };
 
 pub const ASTAnalyzer = struct {
@@ -72,6 +81,7 @@ pub const ASTAnalyzer = struct {
     check_format: bool = true,
     dupe_import: bool = false,
     file_as_struct: bool = false,
+    banned_comment_phrases: ?BannedPhraseConfig = null,
 
     pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
         self.max_line_length = max_line_length;
@@ -97,19 +107,20 @@ pub const ASTAnalyzer = struct {
         // is there a better way to do ziglint ignores via the tokenizer or something?
         // Line length hasn't yet been split off into its own rule since ziglint: ignore happens here too
         var max_line_length = @import("rules/max_line_length.zig").MaxLineLength{ .limit = self.max_line_length };
+        const banned_comment_phrases = @import("rules/banned_comment_phrases.zig").BannedCommentPhrases{ .config = self.banned_comment_phrases };
 
         var current_line_number: u32 = 1;
-        var current_line_length: u32 = 0;
         var current_line_start: usize = 0;
-        var is_comment = false;
+        var current_line_length: u32 = 0;
+        var comment_start_idx: ?usize = null; // null if no comment
         var line_has_non_comment_content = false;
         for (tree.source, 0..) |c, idx| {
             current_line_length += 1;
-            if (c == '/' and tree.source[idx + 1] == '/') {
+            if (comment_start_idx == null and c == '/' and tree.source[idx + 1] == '/') {
                 // Comment
-                is_comment = true;
+                comment_start_idx = idx;
             }
-            if (!line_has_non_comment_content and !is_comment and c != '/' and c != '\t' and c != ' ') {
+            if (!line_has_non_comment_content and comment_start_idx == null and c != '/' and c != '\t' and c != ' ') {
                 // std.debug.print("LINE {}: NOT A COMMENT: '{c}'\n", .{current_line_number, c});
                 line_has_non_comment_content = true;
             }
@@ -121,21 +132,28 @@ pub const ASTAnalyzer = struct {
                     try max_line_length.check_line(alloc, &faults, line, current_line_number);
                 }
 
-                // check for ziglint: ignore remark
-                if (is_comment and
-                    idx > "ziglint: ignore\n".len and
-                    std.mem.eql(u8, tree.source[(idx - "ziglint: ignore".len)..idx], "ziglint: ignore"))
-                {
-                    // if it's standalone, then disable ziglint for the next line
-                    // otherwise, disable for this line
-                    const disable = if (line_has_non_comment_content) current_line_number else current_line_number + 1;
-                    try faults.disable_line(disable);
+                if (comment_start_idx) |start_idx| {
+                    // check for ziglint: ignore remark
+                    if (idx > "ziglint: ignore\n".len and
+                        std.mem.eql(u8, tree.source[(idx - "ziglint: ignore".len)..idx], "ziglint: ignore"))
+                    {
+                        // if it's standalone, then disable ziglint for the next line
+                        // otherwise, disable for this line
+                        const disable = if (line_has_non_comment_content) current_line_number else current_line_number + 1;
+                        try faults.disable_line(disable);
+                    }
+
+                    // run per-comment rules
+                    const comment = tree.source[start_idx..idx];
+                    if (self.banned_comment_phrases != null) {
+                        try banned_comment_phrases.check_comment(alloc, &faults, comment, current_line_number);
+                    }
                 }
 
                 current_line_number += 1;
                 current_line_length = 0;
                 current_line_start = idx + 1;
-                is_comment = false;
+                comment_start_idx = null;
                 line_has_non_comment_content = false;
             }
         }

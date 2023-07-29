@@ -1,0 +1,6 @@
+{
+    "banned_comment_phrases": {
+        "error": ["main", "chicken soup"],
+        "warning": ["get warned lol"]
+    }
+}

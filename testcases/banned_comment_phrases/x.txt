@@ -1,0 +1,8 @@
+./not_in_code.zig:1:31: comment includes banned phrase 'chicken soup':
+    => // This phrase will be banned: chicken soup.
+./not_in_code.zig:2:14: comment includes banned phrase 'main':
+    => //! Here too, main.
+./not_in_code.zig:4:47: comment includes banned phrase 'main':
+    => /// Even substrings within doc-comments have remained subject to bans.
+./not_in_code.zig:10:3: comment includes banned phrase 'get warned lol':
+    => // get warned lol!
