@@ -9,7 +9,7 @@ pub const Task = ThreadPool.Task;
 
 pub fn NewWorkPool(comptime max_threads: ?usize) type {
     return struct {
-        var pool: ThreadPool = undefined;
+        pub var pool: ThreadPool = undefined;
         var loaded: bool = false;
 
         fn create() *ThreadPool {
@@ -31,7 +31,7 @@ pub fn NewWorkPool(comptime max_threads: ?usize) type {
 
         pub fn waitAndDeinit() !void {
             if (loaded) {
-                _ = try pool.wait(false);
+                // _ = try pool.wait(false);
                 pool.deinit();
             }
         }

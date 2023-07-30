@@ -22,6 +22,8 @@ const Configuration = main.Configuration;
 const WorkPool = @import("./work_pool/work_pool.zig").WorkPool;
 const IgnoreTracker = @import("./gitignore.zig").IgnoreTracker;
 
+const MAX_FILE_SIZE = 1024 * 1024 * 1024 * 1024; // 1 TB
+
 fn less_than(_: @TypeOf(.{}), a: analysis.SourceCodeFault, b: analysis.SourceCodeFault) bool {
     return a.line_number < b.line_number;
 }
@@ -55,8 +57,8 @@ const WorkerThreadContext = struct {
     configuration: *const Configuration,
     shared_error_counter: *RwLockedInteger(u64),
     allocator: std.mem.Allocator,
-    file_metadata: *const std.fs.File.Metadata,
     file_name: []const u8,
+    stdout_lock: *std.Thread.RwLock,
 };
 
 pub const ParallelLinter = struct {
@@ -73,6 +75,8 @@ pub const ParallelLinter = struct {
     seen: std.StringHashMap(void),
     /// tracks files to ignore; never used in threads
     ignore_tracker: *const IgnoreTracker,
+    /// Lock for stdout for threads
+    stdout_lock: std.Thread.RwLock = std.Thread.RwLock {},
 
     /// Initializes a new ParallelLinter with a particular analysis configuration.
     ///
@@ -108,8 +112,9 @@ pub const ParallelLinter = struct {
         try self.handle_file_or_directory(file_or_directory, false);
 
         // finally, wait for the work pool to be done and return the # of errors
-        // std.debug.print("about to deinit WorkPool...\n", .{});
-        // try WorkPool.waitAndDeinit();
+        std.debug.print("about to deinit WorkPool...\n", .{});
+        _ = try WorkPool.pool.wait(false);
+        try WorkPool.waitAndDeinit();
         return self.shared_error_counter.read();
     }
 
@@ -182,7 +187,7 @@ pub const ParallelLinter = struct {
                 const file_name_for_thread = try threadsafe_allocator.alloc(u8, file_or_directory.len);
                 @memcpy(file_name_for_thread, file_or_directory);
 
-                std.debug.print("at go\n",.{});
+                std.debug.print("at go for {s}\n",.{ file_name_for_thread });
                 try WorkPool.go(
                     self.allocator,
                     WorkerThreadContext,
@@ -191,8 +196,8 @@ pub const ParallelLinter = struct {
                         .configuration = self.configuration,
                         .shared_error_counter = &self.shared_error_counter,
                         .allocator = threadsafe_allocator,
-                        .file_metadata = &metadata,
                         .file_name = file_name_for_thread,
+                        .stdout_lock = &self.stdout_lock,
                     },
                     ParallelLinter.worker_thread,
                 );
@@ -224,25 +229,28 @@ pub const ParallelLinter = struct {
     /// The function that runs within each thread in the worker pool
     fn worker_thread(context: WorkerThreadContext) void {
         // ahora estamos en la thread
+        // we need to free stuff from the context
+        defer context.allocator.free(context.file_name);
         var error_count: u64 = 0;
 
-        std.debug.print("IN THE THREAD! file_name = {s}\n", .{context.file_name});
-        const file = std.fs.cwd().openFile(context.file_name, .{}) catch |err| {
-            stderr_print("error: couldn't open '{s}': {}", .{ context.file_name, err }) catch unreachable;
-            return;
-        };
-        defer file.close();
+        std.debug.print("CONTEXT for file '{s}':\n", .{context.file_name});
+        std.debug.print("analyzer = {}\n", .{context.analyzer});
+        std.debug.print("shared_error_counter = {}\n", .{context.shared_error_counter.read()});
 
-        const contents = context.allocator.allocSentinel(u8, context.file_metadata.size(), 0) catch |err| {
-            stderr_print("error: couldn't allocate memory to lint '{s}': {}", .{ context.file_name, err }) catch unreachable;
+        const contents = std.fs.cwd().readFileAllocOptions(
+            context.allocator,
+            context.file_name,
+            MAX_FILE_SIZE,
+            null,
+            @alignOf(u8),
+            0,
+        ) catch |err| {
+            stderr_print("error: couldn't read '{s}': {}", .{ context.file_name, err }) catch unreachable;
             return;
         };
         defer context.allocator.free(contents);
 
-        _ = file.readAll(contents) catch |err| {
-            stderr_print("error: couldn't read '{s}': {}", .{ context.file_name, err }) catch unreachable;
-            return;
-        };
+        // std.debug.print("FILE: '{s}'\n", .{contents});
 
         var ast = std.zig.Ast.parse(context.allocator, contents, .zig) catch |err| {
             stderr_print("error: couldn't parse '{s}' into Zig AST: {}", .{ context.file_name, err }) catch unreachable;
@@ -272,6 +280,7 @@ pub const ParallelLinter = struct {
         // const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
         const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
         for (faults.faults.items) |fault| {
+            context.stdout_lock.lock();
             stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
                 bold_text,
                 context.file_name,
@@ -359,6 +368,7 @@ pub const ParallelLinter = struct {
                 },
             }
             stdout_writer.writeAll("\n") catch unreachable;
+            context.stdout_lock.unlock();
 
             if (!warning) error_count += 1;
         }
@@ -367,7 +377,7 @@ pub const ParallelLinter = struct {
         if (error_count != 0) {
             context.shared_error_counter.add(error_count);
         }
-        std.debug.print("reached end of worker_thread\n", .{});
+        std.debug.print("reached end of worker_thread for {s}\n", .{context.file_name});
         return;
     }
 };

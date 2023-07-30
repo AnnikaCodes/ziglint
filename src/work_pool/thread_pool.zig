@@ -8,6 +8,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub const ThreadPool = @This();
+const Futex = @import("./futex.zig");
 
 const assert = std.debug.assert;
 const Atomic = std.atomic.Atomic;
@@ -651,27 +652,27 @@ fn unregister(noalias self: *ThreadPool, noalias maybe_thread: ?*Thread) void {
 }
 
 fn join(self: *ThreadPool) void {
-    std.debug.print("here654\n", .{});
+    // std.debug.print("here654\n", .{});
     // Wait for the thread pool to be shutdown() then for all threads to enter a joinable state
     var sync = @as(Sync, @bitCast(self.sync.load(.Monotonic)));
     if (!(sync.state == .shutdown and sync.spawned == 0)) {
-        std.debug.print("658\n", .{});
+        // std.debug.print("658\n", .{});
         self.join_event.wait();
-        std.debug.print("659\n", .{});
+        // std.debug.print("659\n", .{});
         sync = @as(Sync, @bitCast(self.sync.load(.Monotonic)));
     }
 
-    std.debug.print("here662\n", .{});
+    // std.debug.print("here662\n", .{});
     assert(sync.state == .shutdown);
     assert(sync.spawned == 0);
 
     // If there are threads, start off the chain sending it the shutdown signal.
     // The thread receives the shutdown signal and sends it to the next thread, and the next..
-    std.debug.print("here668\n", .{});
+    // std.debug.print("here668\n", .{});
     const thread = self.threads.load(.Acquire) orelse return;
-    std.debug.print("here670\n", .{});
+    // std.debug.print("here670\n", .{});
     thread.join_event.notify();
-    std.debug.print("here672\n", .{});
+    // std.debug.print("here672\n", .{});
 }
 
 pub const Thread = struct {
@@ -838,7 +839,7 @@ const Event = struct {
             // Acquiring to WAITING will make the next notify() or shutdown() wake a sleeping futex thread
             // who will either exit on SHUTDOWN or acquire with WAITING again, ensuring all threads are awoken.
             // This unfortunately results in the last notify() or shutdown() doing an extra futex wake but that's fine.
-            std.Thread.Futex.wait(&self.state, WAITING);
+            Futex.wait(&self.state, WAITING, null) catch unreachable;
             state = self.state.load(.Monotonic);
             acquire_with = WAITING;
         }
@@ -889,7 +890,7 @@ const Event = struct {
             // Acquiring to WAITING will make the next notify() or shutdown() wake a sleeping futex thread
             // who will either exit on SHUTDOWN or acquire with WAITING again, ensuring all threads are awoken.
             // This unfortunately results in the last notify() or shutdown() doing an extra futex wake but that's fine.
-            std.Thread.Futex.wait(&self.state, WAITING, timeout) catch {};
+            Futex.wait(&self.state, WAITING, timeout) catch {};
             state = self.state.load(.Monotonic);
             acquire_with = WAITING;
         }
@@ -915,7 +916,7 @@ const Event = struct {
         // Only wake threads sleeping in futex if the state is WAITING.
         // Avoids unnecessary wake ups.
         if (state == WAITING) {
-            std.Thread.Futex.wake(&self.state, wake_threads);
+            Futex.wake(&self.state, wake_threads);
         }
     }
 };
