@@ -2,6 +2,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const parallel = @import("./parallel.zig");
+
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
 const upgrade = @import("./upgrade.zig");
@@ -375,7 +377,7 @@ pub fn main() anyerror!void {
     }
 
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
-    var fault_count: u64 = 0;
+    var error_count: u64 = 0;
     for (files) |file| {
         var config_file_parsed = try get_config(file, arena_allocator, switches.verbose orelse false);
         var config = switches;
@@ -415,15 +417,15 @@ pub fn main() anyerror!void {
             }
         }
 
-        fault_count += try lint(file, allocator, analyzer, &ignore_tracker, &seen, config, true);
+        error_count += try lint(file, allocator, analyzer, &ignore_tracker, &seen, config, true);
     }
 
-    if (fault_count >= 256) {
+    if (error_count >= 256) {
         // too many faults to exit with
-        try stderr_print("error: too many faults ({}) to exit with the correct exit code", .{fault_count});
+        try stderr_print("error: too many faults ({}) to exit with the correct exit code", .{error_count});
         std.process.exit(255);
     }
-    std.process.exit(@as(u8, @intCast(fault_count)));
+    std.process.exit(@as(u8, @intCast(error_count)));
 }
 
 // Creates a Configuration object for the given file based on the nearest ziglintrc file.
@@ -571,133 +573,27 @@ fn lint(
 
     const metadata = try file.metadata(); // TODO: is .stat() faster?
     const kind = metadata.kind();
-    var fault_count: u64 = 0;
+    var error_count: u64 = 0;
     switch (kind) {
         .file => {
             if (!is_top_level) {
                 // not a Zig file + not directly specified by the user
-                if (!std.mem.endsWith(u8, file_name, ".zig")) return fault_count;
+                if (!std.mem.endsWith(u8, file_name, ".zig")) return error_count;
                 // ignored by a .gitignore
-                if (try ignore_tracker.is_ignored(file_name)) return fault_count;
+                if (try ignore_tracker.is_ignored(file_name)) return error_count;
             }
 
-            // lint it
-            const contents = try alloc.allocSentinel(u8, metadata.size(), 0);
-            defer alloc.free(contents);
-            _ = file.readAll(contents) catch |err| {
-                try stderr_print("error: couldn't read '{s}': {}", .{ file_name, err });
-                return fault_count;
-            };
-
-            var ast = try std.zig.Ast.parse(alloc, contents, .zig);
-            defer ast.deinit(alloc);
-            var faults = try analyzer.analyze(alloc, file_name, ast);
-            defer faults.deinit();
-
-            // TODO just return faults.items
-
-            const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.faults.items, .{}, less_than);
-            _ = sorted_faults;
-            const stdout = std.io.getStdOut();
-            const stdout_writer = stdout.writer();
-
-            const use_color: bool = stdout.supportsAnsiEscapeCodes();
-            const bold_text: []const u8 = if (use_color) "\x1b[1m" else "";
-            const red_text: []const u8 = if (use_color) "\x1b[31m" else "";
-            const yellow_text: []const u8 = if (use_color) "\x1b[33m" else "";
-
-            // currently not used but makes for a nice highlight!
-            // const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
-            const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
-            for (faults.faults.items) |fault| {
-                try stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
-                    bold_text,
-                    file_name,
-                    fault.line_number,
-                    fault.column_number,
-                    end_text_fmt,
-                });
-                var warning = false;
-                var fault_formatting = red_text;
-                switch (fault.fault_type) {
-                    .LineTooLong => |len| {
-                        if (config.max_line_length != null and config.max_line_length.?.severity == .Warning) {
-                            warning = true;
-                            fault_formatting = yellow_text;
-                        }
-
-                        try stdout_writer.print(
-                            "line is {s}{} characters long{s}; the maximum is {}",
-                            .{ fault_formatting, len, end_text_fmt, analyzer.max_line_length },
-                        );
-                    },
-                    .BannedCommentPhrase => |phrase_info| {
-                        if (phrase_info.severity_level == .Warning) {
-                            warning = true;
-                            fault_formatting = yellow_text;
-                        }
-
-                        try stdout_writer.print(
-                            "comment includes banned phrase '{s}{s}{s}':\n    {s}=> {s}{s}",
-                            .{
-                                fault_formatting, phrase_info.phrase, end_text_fmt,
-                                fault_formatting, end_text_fmt,       phrase_info.comment,
-                            },
-                        );
-                    },
-                    .DupeImport => |name| {
-                        // TODO: can we do some shenanigans with @field to make this if not have to be in every switch?
-                        if (config.dupe_import == .Warning) {
-                            warning = true;
-                            fault_formatting = yellow_text;
-                        }
-
-                        try stdout_writer.print(
-                            "found {s}duplicate import{s} of {s}",
-                            .{ fault_formatting, end_text_fmt, name },
-                        );
-                    },
-                    .FileAsStruct => |capitalize| {
-                        if (config.file_as_struct == .Warning) {
-                            warning = true;
-                            fault_formatting = yellow_text;
-                        }
-
-                        if (capitalize) {
-                            try stdout_writer.print(
-                                "found top level fields, file name should be {s}capitalized{s}",
-                                .{ fault_formatting, end_text_fmt },
-                            );
-                        } else {
-                            try stdout_writer.print(
-                                "found no top level fields, file name should be {s}lowercase{s}",
-                                .{ fault_formatting, end_text_fmt },
-                            );
-                        }
-                    },
-                    .ImproperlyFormatted => {
-                        if (config.check_format == .Warning) {
-                            warning = true;
-                            fault_formatting = yellow_text;
-                        }
-                        try stdout_writer.print(
-                            "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",
-                            .{ fault_formatting, end_text_fmt },
-                        );
-                    },
-                    .ASTError => {
-                        try stdout_writer.print("Zig's code parser detected an error: {s}", .{red_text});
-                        try ast.renderError(fault.ast_error.?, stdout_writer);
-                        try stdout_writer.print("{s}", .{end_text_fmt});
-                    },
-                }
-                try stdout_writer.writeAll("\n");
-
-                if (!warning) fault_count += 1;
-            }
+            error_count += try lint_file(
+                alloc,
+                metadata,
+                file,
+                file_name,
+                analyzer,
+                config,
+            );
         },
         .directory => {
-            fault_count += try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen, config);
+            error_count += try walk_directory(file_name, alloc, analyzer, ignore_tracker, seen, config);
         },
         else => {
             try stderr_print(
@@ -706,9 +602,134 @@ fn lint(
             );
         },
     }
-    return fault_count;
+    return error_count;
 }
 
+fn lint_file(
+    alloc: std.mem.Allocator,
+    metadata: std.fs.File.Metadata,
+    file: std.fs.File,
+    file_name: []const u8,
+    analyzer: analysis.ASTAnalyzer,
+    config: Configuration,
+) !u64 {
+    // lint it
+    var error_count: u64 = 0;
+    const contents = try alloc.allocSentinel(u8, metadata.size(), 0);
+    defer alloc.free(contents);
+    _ = file.readAll(contents) catch |err| {
+        try stderr_print("error: couldn't read '{s}': {}", .{ file_name, err });
+        return error_count;
+    };
+
+    var ast = try std.zig.Ast.parse(alloc, contents, .zig);
+    defer ast.deinit(alloc);
+    var faults = try analyzer.analyze(alloc, file_name, ast);
+    defer faults.deinit();
+
+    // TODO just return faults.items
+
+    const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.faults.items, .{}, less_than);
+    _ = sorted_faults;
+    const stdout = std.io.getStdOut();
+    const stdout_writer = stdout.writer();
+
+    const use_color: bool = stdout.supportsAnsiEscapeCodes();
+    const bold_text: []const u8 = if (use_color) "\x1b[1m" else "";
+    const red_text: []const u8 = if (use_color) "\x1b[31m" else "";
+    const yellow_text: []const u8 = if (use_color) "\x1b[33m" else "";
+
+    // currently not used but makes for a nice highlight!
+    // const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
+    const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
+    for (faults.faults.items) |fault| {
+        try stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
+            bold_text,
+            file_name,
+            fault.line_number,
+            fault.column_number,
+            end_text_fmt,
+        });
+        var warning = false;
+        var fault_formatting = red_text;
+        switch (fault.fault_type) {
+            .LineTooLong => |len| {
+                if (config.max_line_length != null and config.max_line_length.?.severity == .Warning) {
+                    warning = true;
+                    fault_formatting = yellow_text;
+                }
+
+                try stdout_writer.print(
+                    "line is {s}{} characters long{s}; the maximum is {}",
+                    .{ fault_formatting, len, end_text_fmt, analyzer.max_line_length },
+                );
+            },
+            .BannedCommentPhrase => |phrase_info| {
+                if (phrase_info.severity_level == .Warning) {
+                    warning = true;
+                    fault_formatting = yellow_text;
+                }
+
+                try stdout_writer.print(
+                    "comment includes banned phrase '{s}{s}{s}':\n    {s}=> {s}{s}",
+                    .{
+                        fault_formatting, phrase_info.phrase, end_text_fmt,
+                        fault_formatting, end_text_fmt,       phrase_info.comment,
+                    },
+                );
+            },
+            .DupeImport => |name| {
+                // TODO: can we do some shenanigans with @field to make this if not have to be in every switch?
+                if (config.dupe_import == .Warning) {
+                    warning = true;
+                    fault_formatting = yellow_text;
+                }
+
+                try stdout_writer.print(
+                    "found {s}duplicate import{s} of {s}",
+                    .{ fault_formatting, end_text_fmt, name },
+                );
+            },
+            .FileAsStruct => |capitalize| {
+                if (config.file_as_struct == .Warning) {
+                    warning = true;
+                    fault_formatting = yellow_text;
+                }
+
+                if (capitalize) {
+                    try stdout_writer.print(
+                        "found top level fields, file name should be {s}capitalized{s}",
+                        .{ fault_formatting, end_text_fmt },
+                    );
+                } else {
+                    try stdout_writer.print(
+                        "found no top level fields, file name should be {s}lowercase{s}",
+                        .{ fault_formatting, end_text_fmt },
+                    );
+                }
+            },
+            .ImproperlyFormatted => {
+                if (config.check_format == .Warning) {
+                    warning = true;
+                    fault_formatting = yellow_text;
+                }
+                try stdout_writer.print(
+                    "the file is {s}improperly formatted{s}; try using `zig fmt` to fix it",
+                    .{ fault_formatting, end_text_fmt },
+                );
+            },
+            .ASTError => {
+                try stdout_writer.print("Zig's code parser detected an error: {s}", .{red_text});
+                try ast.renderError(fault.ast_error.?, stdout_writer);
+                try stdout_writer.print("{s}", .{end_text_fmt});
+            },
+        }
+        try stdout_writer.writeAll("\n");
+
+        if (!warning) error_count += 1;
+    }
+    return error_count;
+}
 // iterate over a directory and lint
 // returns # of faults found
 fn walk_directory(
@@ -725,13 +746,13 @@ fn walk_directory(
 
     var iterable = dir.iterate();
     var entry = try iterable.next();
-    var fault_count: u64 = 0;
+    var error_count: u64 = 0;
     while (entry != null) : (entry = try iterable.next()) {
         const full_name = try std.fs.path.join(alloc, &[_][]const u8{ file_name, entry.?.name });
         defer alloc.free(full_name);
-        fault_count += try lint(full_name, alloc, analyzer, ignore_tracker, seen, config, false);
+        error_count += try lint(full_name, alloc, analyzer, ignore_tracker, seen, config, false);
     }
-    return fault_count;
+    return error_count;
 }
 
 // TODO: more lints! (import order, cyclomatic complexity)
