@@ -1,15 +1,4 @@
 //! Parallelization code.
-//!
-//! vvv the below stuff is wrong vvv
-//! The current architecture is that the main process iterates over the director(ies) and finds
-//! the files that need to be linted.
-//! It puts them into a queue, which each of the worker threads pulls from.
-//! Each worker thread grabs files from the queue and lints them, incrementing its own local fault counter.
-//! (These worker threads also print the faults in the files as they lint them.)
-//!
-//! When the files are all in the queue, the main process will put some sort of signal on the queue
-//! that will instruct the worker threads to add their fault counters to the shared fault counter (protected by a RwLock).
-//! ASTAnalyzers are not mutated during analysis, so one *const ASTAnalyzer pointer can be shared between threads.
 
 const std = @import("std");
 
@@ -36,7 +25,7 @@ fn RwLockedInteger(comptime T: type) type {
         fn init(value: T) RwLockedInteger(T) {
             return RwLockedInteger(T){
                 .value = value,
-                .lock = std.Thread.RwLock {},
+                .lock = std.Thread.RwLock{},
             };
         }
 
@@ -76,7 +65,7 @@ pub const ParallelLinter = struct {
     /// tracks files to ignore; never used in threads
     ignore_tracker: *const IgnoreTracker,
     /// Lock for stdout for threads
-    stdout_lock: std.Thread.RwLock = std.Thread.RwLock {},
+    stdout_lock: std.Thread.RwLock = std.Thread.RwLock{},
 
     /// Initializes a new ParallelLinter with a particular analysis configuration.
     ///
@@ -88,14 +77,13 @@ pub const ParallelLinter = struct {
         configuration: *const Configuration,
         ignore_tracker: *const IgnoreTracker,
     ) ParallelLinter {
-
         return .{
             .analyzer = analyzer,
             .configuration = configuration,
             .shared_error_counter = RwLockedInteger(u64).init(0),
             .seen = std.StringHashMap(void).init(arena_allocator),
             .allocator = normal_allocator,
-            .thread_safe_allocator = std.heap.ThreadSafeAllocator {
+            .thread_safe_allocator = std.heap.ThreadSafeAllocator{
                 .child_allocator = normal_allocator,
             },
             .ignore_tracker = ignore_tracker,
@@ -112,9 +100,7 @@ pub const ParallelLinter = struct {
         try self.handle_file_or_directory(file_or_directory, false);
 
         // finally, wait for the work pool to be done and return the # of errors
-        std.debug.print("about to deinit WorkPool...\n", .{});
-        _ = try WorkPool.pool.wait(false);
-        try WorkPool.waitAndDeinit();
+        try WorkPool.waitForCompletionAndDeinit();
         return self.shared_error_counter.read();
     }
 
@@ -187,11 +173,10 @@ pub const ParallelLinter = struct {
                 const file_name_for_thread = try threadsafe_allocator.alloc(u8, file_or_directory.len);
                 @memcpy(file_name_for_thread, file_or_directory);
 
-                std.debug.print("at go for {s}\n",.{ file_name_for_thread });
-                try WorkPool.go(
+                try WorkPool.add_task(
                     self.allocator,
                     WorkerThreadContext,
-                    WorkerThreadContext {
+                    WorkerThreadContext{
                         .analyzer = self.analyzer,
                         .configuration = self.configuration,
                         .shared_error_counter = &self.shared_error_counter,
@@ -233,10 +218,6 @@ pub const ParallelLinter = struct {
         defer context.allocator.free(context.file_name);
         var error_count: u64 = 0;
 
-        std.debug.print("CONTEXT for file '{s}':\n", .{context.file_name});
-        std.debug.print("analyzer = {}\n", .{context.analyzer});
-        std.debug.print("shared_error_counter = {}\n", .{context.shared_error_counter.read()});
-
         const contents = std.fs.cwd().readFileAllocOptions(
             context.allocator,
             context.file_name,
@@ -266,8 +247,7 @@ pub const ParallelLinter = struct {
 
         // TODO just return faults.items
 
-        const sorted_faults = std.sort.insertion(analysis.SourceCodeFault, faults.faults.items, .{}, less_than);
-        _ = sorted_faults;
+        _ = std.sort.insertion(analysis.SourceCodeFault, faults.faults.items, .{}, less_than);
         const stdout = std.io.getStdOut();
         const stdout_writer = stdout.writer();
 
@@ -280,6 +260,7 @@ pub const ParallelLinter = struct {
         // const bold_magenta: []const u8 = if (use_color) "\x1b[1;35m" else "";
         const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
         for (faults.faults.items) |fault| {
+            // TODO: is it faster to just pass the faults back up to the main process and avoid locking stdout?
             context.stdout_lock.lock();
             stdout_writer.print("{s}{s}:{}:{}{s}: ", .{
                 bold_text,
@@ -292,10 +273,9 @@ pub const ParallelLinter = struct {
             var fault_formatting = red_text;
             switch (fault.fault_type) {
                 .LineTooLong => |len| {
-                    if (
-                        context.configuration.max_line_length != null and
-                        context.configuration.max_line_length.?.severity == .Warning
-                    ) {
+                    if (context.configuration.max_line_length != null and
+                        context.configuration.max_line_length.?.severity == .Warning)
+                    {
                         warning = true;
                         fault_formatting = yellow_text;
                     }
@@ -362,7 +342,10 @@ pub const ParallelLinter = struct {
                 .ASTError => {
                     stdout_writer.print("Zig's code parser detected an error: {s}", .{red_text}) catch unreachable;
                     ast.renderError(fault.ast_error.?, stdout_writer) catch |err| {
-                        stderr_print("error: couldn't render AST error for {s}: {}", .{ context.file_name, err }) catch unreachable;
+                        stderr_print(
+                            "error: couldn't render AST error for {s}: {}",
+                            .{ context.file_name, err },
+                        ) catch unreachable;
                     };
                     stdout_writer.print("{s}", .{end_text_fmt}) catch unreachable;
                 },
@@ -377,7 +360,6 @@ pub const ParallelLinter = struct {
         if (error_count != 0) {
             context.shared_error_counter.add(error_count);
         }
-        std.debug.print("reached end of worker_thread for {s}\n", .{context.file_name});
         return;
     }
 };

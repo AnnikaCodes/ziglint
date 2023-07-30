@@ -1,10 +1,10 @@
 //! Most of this file is from the Bun project:
 //! https://github.com/oven-sh/bun/blob/main/src/futex.zig
-
 //! Futex is a mechanism used to block (`wait`) and unblock (`wake`) threads using a 32bit memory address as hints.
 //! Blocking a thread is acknowledged only if the 32bit memory address is equal to a given value.
 //! This check helps avoid block/unblock deadlocks which occur if a `wake()` happens before a `wait()`.
-//! Using Futex, other Thread synchronization primitives can be built which efficiently wait for cross-thread events or signals.
+//! Using Futex, other Thread synchronization primitives can be built
+//! which efficiently wait for cross-thread events or signals.
 
 // This is copy-pasted from Zig's source code to fix an issue with linking on macOS Catalina and earlier.
 
@@ -26,7 +26,8 @@ const spinLoopHint = std.atomic.spinLoopHint;
 /// - The caller is unblocked by a matching `wake()`.
 /// - The caller is unblocked spuriously by an arbitrary internal signal.
 ///
-/// If `timeout` is provided, and the caller is blocked for longer than `timeout` nanoseconds`, `error.TimedOut` is returned.
+/// If `timeout` is provided, and the caller is blocked for longer than `timeout` nanoseconds`,
+/// `error.TimedOut` is returned.
 ///
 /// The checking of `ptr` and `expect`, along with blocking the caller, is done atomically
 /// and totally ordered (sequentially consistent) with respect to other wait()/wake() calls on the same `ptr`.
@@ -62,7 +63,8 @@ pub fn wait(ptr: *const Atomic(u32), expect: u32, timeout: ?u64) error{TimedOut}
 }
 
 /// Unblocks at most `num_waiters` callers blocked in a `wait()` call on `ptr`.
-/// `num_waiters` of 1 unblocks at most one `wait(ptr, ...)` and `maxInt(u32)` unblocks effectively all `wait(ptr, ...)`.
+/// `num_waiters` of 1 unblocks at most one `wait(ptr, ...)` and `maxInt(u32)`
+/// unblocks effectively all `wait(ptr, ...)`.
 pub fn wake(ptr: *const Atomic(u32), num_waiters: u32) void {
     if (single_threaded) return;
     if (num_waiters == 0) return;
@@ -180,7 +182,9 @@ const DarwinFutex = struct {
     const darwin = std.os.darwin;
 
     fn wait(ptr: *const Atomic(u32), expect: u32, timeout: ?u64) error{TimedOut}!void {
-        // Darwin XNU 7195.50.7.100.1 introduced __ulock_wait2 and migrated code paths (notably pthread_cond_t) towards it:
+        // Darwin XNU 7195.50.7.100.1 introduced __ulock_wait2
+        // and migrated code paths (notably pthread_cond_t) towards it:
+        // ziglint: ignore
         // https://github.com/apple/darwin-xnu/commit/d4061fb0260b3ed486147341b72468f836ed6c8f#diff-08f993cc40af475663274687b7c326cc6c3031e0db3ac8de7b24624610616be6
         //
         // This XNU version appears to correspond to 11.0.1:

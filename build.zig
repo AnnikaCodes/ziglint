@@ -29,6 +29,7 @@ pub fn build(b: *std.Build) !void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    build_options.addOption(bool, "DEBUG_BUILD", optimize == .Debug);
 
     const exe = b.addExecutable(.{
         .name = "ziglint",

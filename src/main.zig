@@ -3,6 +3,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ParallelLinter = @import("./parallel_lint.zig").ParallelLinter;
+const build_options = @import("comptime_build");
 
 // const git_revision = @import("gitrev").revision;
 const analysis = @import("./analysis.zig");
@@ -19,7 +20,7 @@ const ZIGLINT_VERSION = Version{
     .minor = 0,
     .patch = 7,
     .prerelease = null,
-    .build_metadata = @import("comptime_build").GIT_COMMIT_HASH,
+    .build_metadata = build_options.GIT_COMMIT_HASH,
 };
 
 const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
@@ -242,9 +243,7 @@ fn is_warning(text: []const u8) bool {
 }
 
 pub fn main() anyerror!void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer std.debug.assert(gpa.deinit() != .leak);
+    const allocator = std.heap.c_allocator;
 
     // use an ArenaAllocator for everything that's not per-file
     var arena = std.heap.ArenaAllocator.init(allocator);

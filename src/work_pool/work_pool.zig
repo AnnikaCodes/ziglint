@@ -2,15 +2,16 @@
 //! https://github.com/oven-sh/bun/blob/main/src/work_pool.zig
 
 const std = @import("std");
-const ThreadPool = @import("./thread_pool.zig").ThreadPool;
+const ThreadPool = @import("./ThreadPool.zig").ThreadPool;
 
 pub const Batch = ThreadPool.Batch;
 pub const Task = ThreadPool.Task;
 
 pub fn NewWorkPool(comptime max_threads: ?usize) type {
     return struct {
-        pub var pool: ThreadPool = undefined;
+        var pool: ThreadPool = undefined;
         var loaded: bool = false;
+        var scheduled_tasks: u64 = 0;
 
         fn create() *ThreadPool {
             @setCold(true);
@@ -29,22 +30,24 @@ pub fn NewWorkPool(comptime max_threads: ?usize) type {
             return create();
         }
 
-        pub fn waitAndDeinit() !void {
-            if (loaded) {
-                // _ = try pool.wait(false);
-                pool.deinit();
-            }
+        pub fn waitForCompletionAndDeinit() !void {
+            while (scheduled_tasks > 0) {
+                std.time.sleep(1); // TODO: optimal sleep interval here?
+            } // wait for all scheduled tasks to complete
+            pool.shutdown();
+            pool.deinit();
         }
 
-        pub fn scheduleBatch(batch: ThreadPool.Batch) void {
-            get().schedule(batch);
-        }
-
-        pub fn schedule(task: *ThreadPool.Task) void {
+        fn schedule(task: *ThreadPool.Task) void {
             get().schedule(ThreadPool.Batch.from(task));
         }
 
-        pub fn go(allocator: std.mem.Allocator, comptime Context: type, context: Context, comptime function: fn (Context) void) !void {
+        pub fn add_task(
+            allocator: std.mem.Allocator,
+            comptime Context: type,
+            context: Context,
+            comptime function: fn (Context) void,
+        ) !void {
             const TaskType = struct {
                 task: Task,
                 context: Context,
@@ -54,6 +57,7 @@ pub fn NewWorkPool(comptime max_threads: ?usize) type {
                     var this_task = @fieldParentPtr(@This(), "task", task);
                     function(this_task.context);
                     this_task.allocator.destroy(this_task);
+                    scheduled_tasks -= 1;
                 }
             };
 
@@ -64,6 +68,7 @@ pub fn NewWorkPool(comptime max_threads: ?usize) type {
                 .allocator = allocator,
             };
             schedule(&task_.task);
+            scheduled_tasks += 1;
         }
     };
 }

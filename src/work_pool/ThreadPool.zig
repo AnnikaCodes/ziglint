@@ -462,6 +462,7 @@ pub fn warm(self: *ThreadPool, count: u14) void {
         const spawn_config = if (builtin.os.tag == .macos)
             // stack size must be a multiple of page_size
             // macOS will fail to spawn a thread if the stack size is not a multiple of page_size
+            // ziglint: ignore
             std.Thread.SpawnConfig{ .stack_size = ((std.Thread.SpawnConfig{}).stack_size + (std.mem.page_size / 2) / std.mem.page_size) * std.mem.page_size }
         else
             std.Thread.SpawnConfig{};
@@ -510,6 +511,7 @@ noinline fn notifySlow(self: *ThreadPool, is_waking: bool) void {
                 const spawn_config = if (builtin.os.tag == .macos)
                     // stack size must be a multiple of page_size
                     // macOS will fail to spawn a thread if the stack size is not a multiple of page_size
+                    // ziglint: ignore
                     std.Thread.SpawnConfig{ .stack_size = ((std.Thread.SpawnConfig{}).stack_size + (std.mem.page_size / 2) / std.mem.page_size) * std.mem.page_size }
                 else
                     std.Thread.SpawnConfig{};
@@ -803,7 +805,8 @@ const Event = struct {
         while (true) {
             // If we're shutdown then exit early.
             // Acquire barrier to ensure operations before the shutdown() are seen after the wait().
-            // Shutdown is rare so it's better to have an Acquire barrier here instead of on CAS failure + load which are common.
+            // Shutdown is rare so it's better to have an Acquire barrier here
+            // instead of on CAS failure + load which are common.
             if (state == SHUTDOWN) {
                 std.atomic.fence(.Acquire);
                 return;
@@ -854,7 +857,8 @@ const Event = struct {
         while (true) {
             // If we're shutdown then exit early.
             // Acquire barrier to ensure operations before the shutdown() are seen after the wait().
-            // Shutdown is rare so it's better to have an Acquire barrier here instead of on CAS failure + load which are common.
+            // Shutdown is rare so it's better to have an Acquire barrier here
+            // instead of on CAS failure + load which are common.
             if (state == SHUTDOWN) {
                 std.atomic.fence(.Acquire);
                 return;
@@ -910,7 +914,8 @@ const Event = struct {
 
     fn wake(self: *Event, release_with: u32, wake_threads: u32) void {
         // Update the Event to notify it with the new `release_with` state (either NOTIFIED or SHUTDOWN).
-        // Release barrier to ensure any operations before this are this to happen before the wait() in the other threads.
+        // Release barrier to ensure any operations before this are this
+        // to happen before the wait() in the other threads.
         const state = self.state.swap(release_with, .Release);
 
         // Only wake threads sleeping in futex if the state is WAITING.
@@ -1059,7 +1064,8 @@ pub const Node = struct {
                         const node = nodes orelse break;
                         nodes = node.next;
 
-                        // Array written atomically with weakest ordering since it could be getting atomically read by steal().
+                        // Array written atomically with weakest ordering
+                        // since it could be getting atomically read by steal().
                         self.array[tail % capacity].store(node, .Unordered);
                         tail +%= 1;
                     }
@@ -1076,7 +1082,8 @@ pub const Node = struct {
 
                 // Try to steal/overflow half of the tasks in the buffer to make room for future push()es.
                 // Migrating half amortizes the cost of stealing while requiring future pops to still use the buffer.
-                // Acquire barrier to ensure the linked list creation after the steal only happens after we successfully steal.
+                // Acquire barrier to ensure the linked list creation after the steal
+                // only happens after we successfully steal.
                 var migrate = size / 2;
                 head = self.head.tryCompareAndSwap(
                     head,
@@ -1203,7 +1210,8 @@ pub const Node = struct {
                 }
 
                 // Try to commit the steal from the target buffer using:
-                // - an Acquire barrier to ensure that we only interact with the stolen Nodes after the steal was committed.
+                // - an Acquire barrier to ensure that we only interact
+                //   with the stolen Nodes after the steal was committed.
                 // - a Release barrier to ensure that the Nodes are copied above prior to the committing of the steal
                 //   because if they're copied after the steal, the could be getting rewritten by the target's push().
                 _ = buffer.head.compareAndSwap(
