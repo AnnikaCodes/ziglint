@@ -374,6 +374,10 @@ pub fn main() anyerror!void {
 
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
     var error_count: u64 = 0;
+    var parallel_linter: ?ParallelLinter = null;
+    defer {
+        if (parallel_linter) |*linter| linter.deinit();
+    }
     for (files) |file| {
         var config_file_parsed = try get_config(file, arena_allocator, switches.verbose orelse false);
         var config = switches;
@@ -413,14 +417,19 @@ pub fn main() anyerror!void {
             }
         }
 
-        var linter = ParallelLinter.init(
-            arena_allocator,
-            allocator,
-            &analyzer,
-            &config,
-            &ignore_tracker,
-        );
-        error_count += try linter.run(file);
+        if (parallel_linter) |*linter| {
+            linter.update_config(&analyzer, &config, &ignore_tracker);
+            error_count += try linter.run(file);
+        } else {
+            parallel_linter = ParallelLinter.init(
+                arena_allocator,
+                allocator,
+                &analyzer,
+                &config,
+                &ignore_tracker,
+            );
+            error_count += try parallel_linter.?.run(file);
+        }
     }
 
     if (error_count >= 256) {

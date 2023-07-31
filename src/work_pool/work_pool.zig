@@ -30,10 +30,13 @@ pub fn NewWorkPool(comptime max_threads: ?usize) type {
             return create();
         }
 
-        pub fn waitForCompletionAndDeinit() !void {
+        pub fn waitForCompletion() void {
             while (scheduled_tasks > 0) {
                 std.time.sleep(1); // TODO: optimal sleep interval here?
             } // wait for all scheduled tasks to complete
+        }
+
+        pub fn shutdown() void {
             pool.shutdown();
             pool.deinit();
         }

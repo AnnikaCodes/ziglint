@@ -100,8 +100,23 @@ pub const ParallelLinter = struct {
         try self.handle_file_or_directory(file_or_directory, false);
 
         // finally, wait for the work pool to be done and return the # of errors
-        try WorkPool.waitForCompletionAndDeinit();
+        WorkPool.waitForCompletion();
         return self.shared_error_counter.read();
+    }
+
+    pub fn deinit(_: *ParallelLinter) void {
+        WorkPool.shutdown();
+    }
+
+    pub fn update_config(
+        self: *ParallelLinter,
+        analyzer: *const analysis.ASTAnalyzer,
+        configuration: *const Configuration,
+        ignore_tracker: *const IgnoreTracker,
+    ) void {
+        self.analyzer = analyzer;
+        self.configuration = configuration;
+        self.ignore_tracker = ignore_tracker;
     }
 
     /// Handles a file or directory, putting files to lint on the queue.
