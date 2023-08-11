@@ -1,6 +1,7 @@
 {
     "max_line_length": {
         "limit": 100,
+        "multiline": false,
         "severity": "error"
     }
 }

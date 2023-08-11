@@ -73,20 +73,61 @@ fn SeverityLevelPlusConfig(comptime config: type) type {
 }
 
 const RawJSONSeverityLevel = []const u8;
-fn RawJSONSeverityLevelPlusConfig(comptime config: type) type {
-    return struct {
-        severity: RawJSONSeverityLevel,
-        config: config,
+
+fn WithSeverityLevel(comptime Config: type) type {
+    return WithSeverityField(SeverityLevel, Config);
+}
+
+fn WithRawJSONSeverityLevel(comptime Config: type) type {
+    return WithSeverityField(RawJSONSeverityLevel, Config);
+}
+
+fn WithSeverityField(comptime SeverityField: type, comptime Config: type) type {
+    const existing: []const std.builtin.Type.StructField = switch (@typeInfo(Config)) {
+        .Struct => |info| info.fields,
+        .Bool, .Int, .Float => &[_]std.builtin.Type.StructField{.{
+            .name = "value",
+            .type = Config,
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = @alignOf(Config),
+        }},
+        else => unreachable,
     };
+
+    var structFields: [existing.len + 1]std.builtin.Type.StructField = undefined;
+    var decls = [_]std.builtin.Type.Declaration{};
+
+    structFields[0] = .{
+        .name = "severity",
+        .type = SeverityField,
+        .default_value = null,
+        .is_comptime = false,
+        .alignment = @alignOf(SeverityLevel),
+    };
+    inline for (existing, 1..) |field, i| {
+        std.debug.assert(!std.mem.eql(u8, field.name, "severity"));
+        structFields[i] = field;
+    }
+
+    return @Type(.{
+        .Struct = .{
+            .layout = .Auto,
+            .fields = &structFields,
+            .decls = &decls,
+            .is_tuple = false,
+        },
+    });
 }
 
 const BannedPhraseConfig = @import("rules/banned_comment_phrases.zig").BannedPhraseConfig;
+const MaxLineLength = @import("rules/max_line_length.zig").MaxLineLength;
 // Since the JSON includes strings, not enums, we parse the JSON into this intermediate struct, then
 // parse this into a Configuration.
 //
 // TODO: can we programmatically generte this from a Configuration somehow?
 const JSONConfiguration = struct {
-    max_line_length: ?RawJSONSeverityLevelPlusConfig(u32) = null,
+    max_line_length: ?WithRawJSONSeverityLevel(MaxLineLength) = null,
     check_format: ?RawJSONSeverityLevel = null,
     dupe_import: ?RawJSONSeverityLevel = null,
     file_as_struct: ?RawJSONSeverityLevel = null,
@@ -118,13 +159,20 @@ const JSONConfiguration = struct {
                         const severity = JSONConfiguration.parseSeverityFromString(field_value);
                         @field(configuration, field.name) = severity;
                     },
-                    // convert to SeverityLevelPlusConfig(u32)
-                    ?RawJSONSeverityLevelPlusConfig(u32) => {
+                    // convert to WithSeverityLevel(MaxLineLength)
+                    ?WithRawJSONSeverityLevel(MaxLineLength) => {
                         const severity = JSONConfiguration.parseSeverityFromString(field_value.severity);
 
-                        @field(configuration, field.name) = SeverityLevelPlusConfig(u32){
+                        // TODO: can we comptime this somehow?
+                        // maybe we can automagically add a method to the struct produced by WithSeverityLevel
+                        // that gets the original struct.
+                        //
+                        // ie WithSeverityLevel(MaxLineLength)#to_original() returns a MaxLineLength
+                        @field(configuration, field.name) = WithSeverityLevel(MaxLineLength){
                             .severity = severity,
-                            .config = field_value.config,
+                            .limit = field_value.limit,
+                            .url = field_value.url,
+                            .multiline = field_value.multiline,
                         };
                     },
                     // no conversion needed
@@ -144,7 +192,7 @@ const JSONConfiguration = struct {
 };
 
 const Configuration = struct {
-    max_line_length: ?SeverityLevelPlusConfig(u32) = null,
+    max_line_length: ?WithSeverityLevel(MaxLineLength) = null,
     check_format: ?SeverityLevel = null,
     dupe_import: ?SeverityLevel = null,
     file_as_struct: ?SeverityLevel = null,
@@ -319,7 +367,7 @@ pub fn main() anyerror!void {
                     }
                     std.process.exit(1);
                 };
-                switches.max_line_length = .{ .severity = severity_level, .config = max_len };
+                switches.max_line_length = .{ .severity = severity_level, .limit = max_len };
             } else if (std.mem.eql(u8, switch_name, "check-format")) {
                 switches.check_format = get_severity_level(args, args_idx);
             } else if (std.mem.eql(u8, switch_name, "dupe-import")) {
@@ -392,6 +440,12 @@ pub fn main() anyerror!void {
                 @field(analyzer, field.name) = switch (@TypeOf(value)) {
                     SeverityLevel => value != .Disabled,
                     SeverityLevelPlusConfig(u32) => if (value.severity == .Disabled) 0 else value.config,
+                    // TODO: can we automate this with std.meta.fields or other comptime trickery?
+                    WithSeverityLevel(MaxLineLength) => MaxLineLength{
+                        .limit = if (value.severity == .Disabled) 0 else value.limit,
+                        .url = value.url,
+                        .multiline = value.multiline,
+                    },
                     else => value,
                 };
             }
@@ -450,7 +504,7 @@ fn get_config(file_name: []const u8, alloc: std.mem.Allocator, verbose: bool) !?
                     defer alloc.free(fields_str);
 
                     try stderr_print(
-                        "error: an unknown field was encountered in ziglint.json\nValid fields are: {s}",
+                        "error: an unknown field was encountered in ziglint.json\nValid top-level fields are: {s}",
                         .{fields_str},
                     );
                 },
@@ -621,6 +675,7 @@ fn lint(
                 var fault_formatting = red_text;
                 switch (fault.fault_type) {
                     .LineTooLong => |len| {
+                        // TODO: combine config + analyzer to avoid passing stuff
                         if (config.max_line_length != null and config.max_line_length.?.severity == .Warning) {
                             warning = true;
                             fault_formatting = yellow_text;
@@ -628,7 +683,7 @@ fn lint(
 
                         try stdout_writer.print(
                             "line is {s}{} characters long{s}; the maximum is {}",
-                            .{ fault_formatting, len, end_text_fmt, analyzer.max_line_length },
+                            .{ fault_formatting, len, end_text_fmt, analyzer.max_line_length.limit },
                         );
                     },
                     .BannedCommentPhrase => |phrase_info| {

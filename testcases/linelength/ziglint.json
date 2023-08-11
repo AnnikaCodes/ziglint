@@ -1,6 +1,8 @@
 {
     "max_line_length": {
-        "config": 100,
+        "limit": 100,
+        "url": false,
+        "multiline": true,
         "severity": "error"
     }
 }

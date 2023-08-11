@@ -40,7 +40,7 @@ You can enable or disable rules using either command-line options or a `ziglint.
 ```json
 {
     "max_line_length": {
-        "config": 120,
+        "limit": 120,
         "severity": "error"
     }
 }
@@ -141,7 +141,9 @@ This rule restricts the possible length of a line of source code. It will create
 ### `ziglint.json`
 ```json
 {
-    "max_line_length": <maximum number of characters per line>
+    "max_line_length": {
+        "limit": <maximum number of characters per line>,
+        "severity": <severity>
 }
 ```
 ### Command line

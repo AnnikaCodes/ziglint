@@ -14,6 +14,7 @@ const std = @import("std");
 const SeverityLevel = @import("main.zig").SeverityLevel;
 const banned_comment_phrase_rule = @import("rules/banned_comment_phrases.zig");
 const BannedPhraseConfig = banned_comment_phrase_rule.BannedPhraseConfig;
+const MaxLineLength = @import("rules/max_line_length.zig").MaxLineLength;
 
 // A fault in the source code detected by the linter.
 pub const SourceCodeFault = struct {
@@ -78,19 +79,11 @@ pub const SourceCodeFaultType = union(enum) {
 
 pub const ASTAnalyzer = struct {
     // 0 for no checking
-    max_line_length: u32 = 100,
+    max_line_length: MaxLineLength = .{ .limit = 100 },
     check_format: bool = true,
     dupe_import: bool = false,
     file_as_struct: bool = false,
     banned_comment_phrases: ?BannedPhraseConfig = null,
-
-    pub fn set_max_line_length(self: *ASTAnalyzer, max_line_length: u32) void {
-        self.max_line_length = max_line_length;
-    }
-
-    pub fn disable_max_line_length(self: *ASTAnalyzer) void {
-        self.max_line_length = 0;
-    }
 
     // Actually analyzes AST.
     //
@@ -107,7 +100,6 @@ pub const ASTAnalyzer = struct {
         // Enforce line length as needed
         // is there a better way to do ziglint ignores via the tokenizer or something?
         // Line length hasn't yet been split off into its own rule since ziglint: ignore happens here too
-        var max_line_length = @import("rules/max_line_length.zig").MaxLineLength{ .limit = self.max_line_length };
         const banned_comment_phrases = banned_comment_phrase_rule.BannedCommentPhrases{
             .config = self.banned_comment_phrases,
         };
@@ -131,8 +123,8 @@ pub const ASTAnalyzer = struct {
             if (c == '\n' or tree.source[idx + 1] == 0 or (c == '\r' and tree.source[idx + 1] != '\n')) {
                 // The line has ended - run per-line rules
                 const line = tree.source[current_line_start..idx];
-                if (self.max_line_length != 0) {
-                    try max_line_length.check_line(alloc, &faults, line, current_line_number);
+                if (self.max_line_length.limit != 0) {
+                    try self.max_line_length.check_line(alloc, &faults, line, current_line_number);
                 }
 
                 if (comment_start_idx) |start_idx| {
@@ -228,7 +220,7 @@ const Tests = struct {
 
     test "line-length lints" {
         var analyzer = ASTAnalyzer{
-            .max_line_length = 120,
+            .max_line_length = .{ .limit = 120 },
             .check_format = false,
         };
         try run_tests(&analyzer, &.{

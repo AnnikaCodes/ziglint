@@ -1,6 +1,6 @@
 {
     "max_line_length": {
-        "config": 100,
+        "limit": 100,
         "severity": "error"
     },
     "exclude": ["unlinted.zig", "ignored/"],
