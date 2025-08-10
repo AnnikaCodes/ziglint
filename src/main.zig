@@ -84,11 +84,11 @@ fn WithRawJSONSeverityLevel(comptime Config: type) type {
 
 fn WithSeverityField(comptime SeverityField: type, comptime Config: type) type {
     const existing: []const std.builtin.Type.StructField = switch (@typeInfo(Config)) {
-        .Struct => |info| info.fields,
-        .Bool, .Int, .Float => &[_]std.builtin.Type.StructField{.{
+        .@"struct" => |info| info.fields,
+        .bool, .int, .float => &[_]std.builtin.Type.StructField{.{
             .name = "value",
             .type = Config,
-            .default_value = null,
+            .default_value_ptr = null,
             .is_comptime = false,
             .alignment = @alignOf(Config),
         }},
@@ -101,7 +101,7 @@ fn WithSeverityField(comptime SeverityField: type, comptime Config: type) type {
     structFields[0] = .{
         .name = "severity",
         .type = SeverityField,
-        .default_value = null,
+        .default_value_ptr = null,
         .is_comptime = false,
         .alignment = @alignOf(SeverityLevel),
     };
@@ -111,8 +111,8 @@ fn WithSeverityField(comptime SeverityField: type, comptime Config: type) type {
     }
 
     return @Type(.{
-        .Struct = .{
-            .layout = .Auto,
+        .@"struct" = .{
+            .layout = .auto,
             .fields = &structFields,
             .decls = &decls,
             .is_tuple = false,
@@ -274,7 +274,7 @@ fn show_help() !void {
 }
 
 // look ahead to the next argument to see if it's a "warn" or "warning" directive
-fn get_severity_level(args: [][]const u8, args_idx: usize) SeverityLevel {
+fn get_severity_level(args: [][:0]u8, args_idx: usize) SeverityLevel {
     const next_idx = args_idx + 1;
     if (next_idx >= args.len) return SeverityLevel.Error; // default to Error
 
@@ -425,7 +425,7 @@ pub fn main() anyerror!void {
     const files = if (cmd_line_files.items.len > 0) cmd_line_files.items else &[_][]const u8{"."};
     var fault_count: u64 = 0;
     for (files) |file| {
-        var config_file_parsed = try get_config(file, arena_allocator, switches.verbose orelse false);
+        const config_file_parsed = try get_config(file, arena_allocator, switches.verbose orelse false);
         var config = switches;
 
         if (config_file_parsed) |c| {
@@ -543,7 +543,7 @@ fn find_file(alloc: std.mem.Allocator, file_name: []const u8, search_name: []con
         }
     }
 
-    var full_path = try std.fs.realpathAlloc(alloc, file_name);
+    const full_path = try std.fs.realpathAlloc(alloc, file_name);
     defer alloc.free(full_path);
     var nearest_dir = if (is_dir) full_path else std.fs.path.dirname(full_path);
 
@@ -616,7 +616,7 @@ fn lint(
         // exit the program if the *user* specified an inaccessible file;
         // otherwise, just skip it
         if (is_top_level) {
-            std.os.exit(1);
+            std.process.exit(1);
         } else {
             return 0;
         }
@@ -775,7 +775,7 @@ fn walk_directory(
     config: Configuration,
 ) !u64 {
     // todo: is walker faster?
-    var dir = try std.fs.cwd().openIterableDir(file_name, .{});
+    var dir = try std.fs.cwd().openDir(file_name, .{});
     defer dir.close();
 
     var iterable = dir.iterate();

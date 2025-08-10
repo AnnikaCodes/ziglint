@@ -114,8 +114,8 @@ pub const Version = struct {
         // if the versions are equivalent, neither has precedence
         if (self.prerelease == null and other.prerelease == null) return false;
 
-        var self_prerelease_iter = std.mem.split(u8, self.prerelease.?, ".");
-        var other_prerelease_iter = std.mem.split(u8, other.prerelease.?, ".");
+        var self_prerelease_iter = std.mem.splitScalar(u8, self.prerelease.?, '.');
+        var other_prerelease_iter = std.mem.splitScalar(u8, other.prerelease.?, '.');
 
         var self_prerelease_identifier = self_prerelease_iter.next();
         var other_prerelease_identifier = other_prerelease_iter.next();
@@ -125,8 +125,8 @@ pub const Version = struct {
             if (other_prerelease_identifier == null) return true;
 
             // compare digits if both sides have them
-            var self_numeric: ?u32 = std.fmt.parseInt(u32, self_prerelease_identifier.?, 10) catch null;
-            var other_numeric: ?u32 = std.fmt.parseInt(u32, other_prerelease_identifier.?, 10) catch null;
+            const self_numeric: ?u32 = std.fmt.parseInt(u32, self_prerelease_identifier.?, 10) catch null;
+            const other_numeric: ?u32 = std.fmt.parseInt(u32, other_prerelease_identifier.?, 10) catch null;
             if (self_numeric != null and other_numeric != null) {
                 return self_numeric.? > other_numeric.?;
             }

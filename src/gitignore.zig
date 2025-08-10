@@ -155,7 +155,7 @@ fn part_matches(path_part: []const u8, pattern_part: []const u8) bool {
                 // if the * is the last character, it matches everything
                 if (pattern_idx + 1 == pattern_part.len) return true;
                 // otherwise, we need to match up to the next character
-                var next_char = pattern_part[pattern_idx + 1];
+                const next_char = pattern_part[pattern_idx + 1];
                 while (path_part[path_idx] != next_char) {
                     path_idx += 1;
                     if (path_idx >= path_part.len) return false;
@@ -183,7 +183,7 @@ fn fix(allocator: std.mem.Allocator, path: []const u8) []const u8 {
 }
 test "matches" {
     // arena allocator - test allocator breaks
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();

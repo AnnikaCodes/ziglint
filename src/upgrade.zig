@@ -125,17 +125,16 @@ pub fn upgrade(alloc: std.mem.Allocator, current_version: semver.Version, overri
             try stderr_print("downloading {s} version {s}...", .{ asset.name, latest_version });
 
             const uri = try std.Uri.parse(asset.url);
-            var headers = std.http.Headers.init(alloc);
-            defer headers.deinit();
-            try headers.append("Accept", asset.content_type);
-
             var client = std.http.Client{ .allocator = alloc };
             defer client.deinit();
 
-            var ziglint_request = try client.request(.GET, uri, headers, .{});
+            var buf: [4096]u8 = undefined;
+            var ziglint_request = try client.open(.GET, uri, .{ .server_header_buffer = &buf });
+            ziglint_request.headers.accept_encoding.override = asset.content_type;
             defer ziglint_request.deinit();
 
-            try ziglint_request.start();
+            try ziglint_request.send();
+            try ziglint_request.finish();
             try ziglint_request.wait();
 
             if (ziglint_request.response.status != .ok) {
@@ -221,10 +220,13 @@ fn access_api(alloc: std.mem.Allocator, api_url: std.Uri, api_buffer: []u8) !std
     var client = std.http.Client{ .allocator = alloc };
     defer client.deinit();
 
-    var api_request = try client.request(.GET, api_url, .{ .allocator = alloc }, .{});
+    // based on example code for new http API from here: https://ziggit.dev/t/simple-http-fetch-request/4456/2
+    var buf: [4096]u8 = undefined;
+    var api_request = try client.open(.GET, api_url, .{ .server_header_buffer = &buf });
     defer api_request.deinit();
 
-    try api_request.start();
+    try api_request.send();
+    try api_request.finish();
     try api_request.wait();
 
     const raw_response = api_buffer[0..try api_request.readAll(api_buffer)];
