@@ -22,7 +22,7 @@ const ZIGLINT_VERSION = Version{
 
 const MAX_CONFIG_BYTES = 64 * 1024; // 64kb max
 
-const fields = std.meta.fields(analysis.ASTAnalyzer);
+const fields = std.meta.fields(JSONConfiguration);
 
 // for sorting
 // TODO figure out the idiomatic way to sort in zig
@@ -775,7 +775,7 @@ fn walk_directory(
     config: Configuration,
 ) !u64 {
     // todo: is walker faster?
-    var dir = try std.fs.cwd().openDir(file_name, .{});
+    var dir = try std.fs.cwd().openDir(file_name, .{ .iterate = true });
     defer dir.close();
 
     var iterable = dir.iterate();

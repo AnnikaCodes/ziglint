@@ -30,7 +30,7 @@ pub fn main() !void {
     const end_text_fmt: []const u8 = if (use_color) "\x1b[0m" else "";
 
     // iterate over all directories in . and run the integration tests
-    var dir = try std.fs.cwd().openIterableDir(".", .{});
+    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
     defer dir.close();
 
     var iterable = dir.iterate();
@@ -68,7 +68,7 @@ pub fn main() !void {
             const is_gitignore = std.mem.eql(u8, name, "gitignore");
             if (is_gitignore) try test_directory.rename(".gitignore-test", ".gitignore");
 
-            const result = try std.ChildProcess.exec(.{
+            const result = try std.process.Child.run(.{
                 .allocator = allocator,
                 .argv = &.{ziglint},
                 .cwd_dir = test_directory,
@@ -153,7 +153,7 @@ fn alphabetize(allocator: std.mem.Allocator, input: []const u8) ![][]const u8 {
         }
     }
 
-    var result = try list.toOwnedSlice();
+    const result = try list.toOwnedSlice();
 
     // sort strings in result alphabetically
     std.sort.insertion([]const u8, result, .{}, less_than);
