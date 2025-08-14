@@ -104,8 +104,9 @@ pub fn build(b: *std.Build) !void {
         // const exe_name = try std.mem.concat(b.allocator, u8, &[_][]const u8{ "ziglint", target.exeFileExt() });
         // const ziglint_path = try std.fs.path.join(b.allocator, &.{ b.exe_dir, exe_name });
 
-        const out_path = try b.path("zig-out/bin").join(b.allocator, exe.out_filename);
-        run_integration_tests.addArgs(&.{out_path.getPath(b)}); // TODO: see if this works
+        const out_dir_path = try b.path("zig-out").join(b.allocator, "bin");
+        const out_file_path = try out_dir_path.join(b.allocator, exe.out_filename);
+        run_integration_tests.addArgs(&.{out_file_path.getPath(b)}); // TODO: see if this works
         run_integration_tests.cwd = b.path("testcases");
 
         test_step.dependOn(&run_integration_tests.step);
