@@ -1,3 +1,6 @@
+### 0.0.8
+- Updated to build with Zig 0.14.1 and use its formatting rules.
+ 
 ### 0.0.7
 **BREAKING CHANGE!**
 `ziglint` now supports specifying the severity of faults that a rule produces.
