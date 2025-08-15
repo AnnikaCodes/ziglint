@@ -28,7 +28,7 @@ jobs:
         with:
           version: 0.14.1
       - name: Install ziglint
-        uses: AnnikaCodes/install-ziglint@v0.1
+        uses: AnnikaCodes/install-ziglint@main
       - name: Lint code
         run: ziglint .
       - name: Set up debugging tmate session
